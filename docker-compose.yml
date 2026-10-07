@@ -1,0 +1,41 @@
+# Ambiente local didático para demonstração e desenvolvimento, não destinado à produção.
+#
+# Subir:    docker compose up -d
+# Status:   docker compose ps          (aguarde "healthy" nos dois serviços)
+# Desligar: docker compose down        (mantém os dados)
+# Zerar:    docker compose down -v     (apaga também os dados indexados)
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.5
+    environment:
+      - discovery.type=single-node        # um único nó, sem cluster
+      - xpack.security.enabled=false      # simplificação didática: sem login e sem TLS. Nunca usar em produção.
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m    # limita a memória da JVM: suficiente para o dataset pequeno e cabe em notebook
+    ports:
+      - "127.0.0.1:9200:9200"             # acessível somente a partir da própria máquina
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s'"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:9.5.5   # mesma versão do Elasticsearch
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "127.0.0.1:5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:5601/api/status"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+
+volumes:
+  esdata:
