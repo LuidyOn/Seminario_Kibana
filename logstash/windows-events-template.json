@@ -1,0 +1,46 @@
+{
+  "index_patterns": ["windows-events"],
+  "priority": 200,
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0
+    },
+    "mappings": {
+      "dynamic_templates": [
+        {
+          "textos_como_keyword": {
+            "match_mapping_type": "string",
+            "mapping": { "type": "keyword" }
+          }
+        }
+      ],
+      "properties": {
+        "@timestamp": { "type": "date" },
+        "event": {
+          "properties": {
+            "id": { "type": "keyword" },
+            "code": { "type": "keyword" },
+            "provider": { "type": "keyword" }
+          }
+        },
+        "log": {
+          "properties": {
+            "level": { "type": "keyword" }
+          }
+        },
+        "winlog": {
+          "properties": {
+            "channel": { "type": "keyword" },
+            "record_id": { "type": "long" }
+          }
+        },
+        "host": {
+          "properties": {
+            "id": { "type": "keyword" }
+          }
+        }
+      }
+    }
+  }
+}

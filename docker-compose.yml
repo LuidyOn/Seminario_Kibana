@@ -1,9 +1,8 @@
 # Ambiente local didático para demonstração e desenvolvimento, não destinado à produção.
 #
-# Subir:    docker compose up -d
-# Status:   docker compose ps          (aguarde "healthy" nos dois serviços)
-# Desligar: docker compose down        (mantém os dados)
-# Zerar:    docker compose down -v     (apaga também os dados indexados)
+# Uso normal (Windows): scripts\iniciar_demo.ps1 e scripts\parar_demo.ps1 (ver README).
+# Status:   docker compose ps          (aguarde "healthy" nos serviços)
+# Desligar: docker compose stop        (mantém containers e dados)
 
 services:
   elasticsearch:
@@ -11,7 +10,7 @@ services:
     environment:
       - discovery.type=single-node        # um único nó, sem cluster
       - xpack.security.enabled=false      # simplificação didática: sem login e sem TLS. Nunca usar em produção.
-      - ES_JAVA_OPTS=-Xms512m -Xmx512m    # limita a memória da JVM: suficiente para o dataset pequeno e cabe em notebook
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m    # limita a memória da JVM: suficiente para o volume pequeno e cabe em notebook
     ports:
       - "127.0.0.1:9200:9200"             # acessível somente a partir da própria máquina
     volumes:
@@ -21,6 +20,19 @@ services:
       interval: 10s
       timeout: 10s
       retries: 30
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:9.5.5   # mesma versão do Elasticsearch e do Kibana
+    environment:
+      - LS_JAVA_OPTS=-Xms256m -Xmx256m    # pipeline pequeno; valor ainda não validado no fluxo completo (ver README)
+    volumes:
+      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./logstash/windows-events-template.json:/usr/share/logstash/templates/windows-events-template.json:ro
+      - ./runtime/logs:/usr/share/logstash/eventos:ro      # arquivo JSONL gravado pelo coletor no Windows
+      - ./runtime/state/logstash:/usr/share/logstash/sincedb  # posição de leitura do arquivo (sincedb)
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
 
   kibana:
     image: docker.elastic.co/kibana/kibana:9.5.5   # mesma versão do Elasticsearch
