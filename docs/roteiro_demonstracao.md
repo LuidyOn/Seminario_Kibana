@@ -1,91 +1,92 @@
 # Roteiro da demonstração (≈ 5 minutos)
 
-Demonstração ao vivo do fluxo **CSV → Elasticsearch → Kibana (Discover, filtro, Lens, Dashboard)**. Os nomes de botões estão em inglês porque a interface do Kibana está em inglês; todos foram conferidos no Kibana 9.5.5.
+Demonstração ao vivo do fluxo **Windows Event Log → coletor PowerShell → `eventos.jsonl` → Logstash → Elasticsearch → Kibana (Discover, filtro, Lens, Dashboard)**, com eventos reais do computador da apresentação. Os nomes de botões estão em inglês porque a interface do Kibana está em inglês. Os comandos devem ser executados no PowerShell, na pasta do projeto.
 
-## 1. Preparação
+## 1. Primeira validação no computador da apresentação (obrigatória)
+
+O coletor foi validado no computador de desenvolvimento, mas o fluxo completo com Logstash, Elasticsearch e Kibana ainda **não foi executado de ponta a ponta** (faltou memória livre naquele computador). Faça esta verificação uma vez, com antecedência, no computador que será usado no seminário:
+
+1. Feche programas pesados (o ambiente precisa de cerca de 3 GB de RAM) e abra o Docker Desktop.
+2. Execute `powershell -ExecutionPolicy Bypass -File .\scripts\iniciar_demo.ps1` e confira as 6 etapas com **OK**. A última mostra quantos eventos estão no índice e quantas linhas há no arquivo do coletor; depois que o Logstash termina a leitura, os dois números devem coincidir (o arquivo pode ter linhas a mais se houver releitura após falhas, nunca a menos).
+3. `docker compose ps`: `elasticsearch` e `kibana` como `healthy` e `logstash` em execução. Em `docker compose logs --tail 30 logstash`, o pipeline `main` deve aparecer iniciado e sem erros.
+4. Abra <http://localhost:5601> → **Explore on my own** → **Dashboards** → **Eventos do Windows**: os quatro painéis devem aparecer sem erro, e o total deve bater com `curl.exe http://localhost:9200/windows-events/_count`.
+5. Teste de retomada: rode `parar_demo.ps1` e depois `iniciar_demo.ps1` de novo. O total no índice só pode crescer pelos eventos realmente novos do Windows, nunca por duplicação.
+6. Anote o consumo com `docker stats --no-stream`. Se o Logstash registrar `OutOfMemoryError`, aumente `LS_JAVA_OPTS` para `-Xms512m -Xmx512m` no `docker-compose.yml`.
+7. Registre o resultado no README (seção "Validação"), corrija qualquer passo deste roteiro que tenha se comportado diferente e, se tudo funcionar, remova os arquivos da versão anterior listados ali.
+
+## 2. Preparação
 
 ### Na véspera (≈ 20 min)
 
-1. Com internet, subir o ambiente: `docker compose up -d` (a primeira vez baixa as imagens, cerca de 5 GB).
-2. Conferir: `docker compose ps` deve mostrar os dois serviços como `healthy`.
-3. Abrir <http://localhost:5601> e clicar em **Explore on my own**.
-4. Importar o dashboard: busca do topo → **Saved objects** → **Import** → `kibana/dashboard_acessos.ndjson` → **Import** → **Done** (deve aparecer "6 objects imported").
-5. No aviso *Your data is not secure*, marcar **Don't show again** e clicar em **Dismiss**. O aviso existe porque a segurança foi desligada de propósito; vale citá-lo na parte de limitações.
-6. Fazer um ensaio completo seguindo a seção 2, cronometrando e gravando a tela: essa gravação é o vídeo de contingência (seção 6).
-7. Voltar ao estado inicial para a apresentação:
-   - apagar o índice criado no ensaio: `curl -X DELETE http://localhost:9200/acessos` (PowerShell: `curl.exe -X DELETE http://localhost:9200/acessos`);
-   - reimportar `kibana/dashboard_acessos.ndjson` (passo 4) para descartar o painel salvo no ensaio.
+1. Siga a seção 1, se ainda não tiver sido feita.
+2. No Kibana, no aviso *Your data is not secure*, marque **Don't show again** e clique em **Dismiss**. O aviso existe porque a segurança foi desligada de propósito; vale citá-lo na parte de limitações.
+3. Faça um ensaio completo da seção 3, cronometrando e gravando a tela: essa gravação é o vídeo de contingência (seção 6).
+4. Para voltar o dashboard ao estado original depois do ensaio: `powershell -ExecutionPolicy Bypass -File .\scripts\iniciar_demo.ps1 -RestaurarDashboard`.
 
 ### 30 minutos antes
 
-- Fechar programas pesados e silenciar notificações. O ambiente precisa de cerca de 3 GB de RAM e, no Windows, a VM do Docker (WSL 2) usa por padrão no máximo metade da memória da máquina.
-- Abrir o Docker Desktop, rodar `docker compose up -d` e esperar `healthy` nos dois serviços (2 a 3 minutos). Logo após iniciar, o Kibana ainda executa tarefas internas por alguns minutos; por isso, subir o ambiente com antecedência.
-- Deixar abertos: `data/acessos.csv` em um editor e o Kibana na **Home**, com zoom do navegador em 125% para leitura no projetor.
-- Deixar o vídeo de contingência pronto para reproduzir.
+- Feche programas pesados, silencie notificações e abra o Docker Desktop.
+- Rode `iniciar_demo.ps1` e espere as 6 etapas com OK.
+- **Pare só o coletor:** `powershell -ExecutionPolicy Bypass -File .\scripts\parar_demo.ps1 -SomenteColetor`. Assim, os eventos que o Windows registrar até a demonstração ficam "pendentes" e serão importados ao vivo (no computador de testes, o canal Aplicativo registrou cerca de 25 eventos por hora).
+- Deixe abertos:
+  - o **Visualizador de Eventos** (`eventvwr.msc`) → Logs do Windows → Aplicativo, com o painel de visualização da mensagem **oculto** (menu Exibir), para não exibir mensagens que podem conter dados pessoais;
+  - um terminal PowerShell na pasta do projeto;
+  - o arquivo `logstash/pipeline/windows-events.conf` num editor;
+  - o Kibana na Home, com zoom do navegador em 125%.
 
-## 2. Roteiro cronometrado
+## 3. Roteiro cronometrado
 
 | Tempo | Ação | Fala de apoio |
 |---|---|---|
-| 00:00 | Mostrar `data/acessos.csv` | "Cada linha é uma requisição: horário, rota, método, status e tempo de resposta. São 70 linhas de um dia." |
-| 00:30 | **Home** → **Upload a file** → *Index name*: `acessos` → selecionar o CSV | "O Kibana lê o arquivo e infere os tipos: `endpoint` virou keyword, `status_code` número, `timestamp` data. Ele também criou `@timestamp`." |
-| 01:15 | **Advanced options** → desligar **Create data view** → **Import** | "O Data View já veio com o dashboard. As etapas mostram o índice criado e os documentos enviados ao Elasticsearch." |
-| 01:45 | Busca do topo → **Discover** → **Search entire time range** | "70 documentos, um por linha do CSV. Os dados são de 01/10, por isso ampliamos o intervalo de tempo." Abrir um documento e mostrar os campos. |
-| 02:30 | Na barra de busca: `status_code >= 500` + Enter | "Seis erros 500, todos em `/pedidos`, entre 14h11 e 15h03. Encontramos o incidente." |
-| 03:15 | Apagar a busca → clicar no campo `endpoint` → **Visualize** | "O Lens montou o gráfico sozinho: `/pedidos` é a rota mais acessada. Embaixo ficam outras sugestões de gráfico." |
-| 03:45 | **Save** → *Title*: `Endpoints mais acessados` → **Existing** → *Acessos da aplicação (logs fictícios)* → **Save and go to dashboard** → **Save** → **Exit edit** | "A visualização entra no dashboard junto com as quatro que já existiam." |
-| 04:15 | No dashboard, clicar no trecho vermelho da barra das 14h → **Apply** | "Um clique filtra todos os painéis: são 5 erros nessa hora, com tempo médio de 2.527 ms." (O Kibana exibe `2,527` porque usa o formato numérico em inglês.) |
-| 05:00 | Encerrar e voltar aos slides | "CSV, índice, documentos e campos, Data View, Discover, Lens e Dashboard: o fluxo completo." |
+| 00:00 | Visualizador de Eventos → Aplicativo | "Esta é a fonte real: cada linha é um evento, com nível, data e hora, fonte e ID. Só esses metadados saem do computador; a mensagem não." |
+| 00:40 | Terminal: `powershell -ExecutionPolicy Bypass -File .\scripts\iniciar_demo.ps1` | "O script confere o Docker, os containers e religa o coletor." |
+| 01:10 | `Get-Content runtime\state\coletor.log -Tail 3` e `Get-Content runtime\logs\eventos.jsonl -Tail 1` | "O coletor importou os eventos que já existiam no Windows enquanto estava parado. Cada evento vira uma linha JSON." Se não houver eventos novos, dizer que a verificação continua a cada 15 s; não forçar eventos. |
+| 01:50 | Mostrar `windows-events.conf` | "O Logstash é configurado assim: entrada `file` com codec `json`, um filtro que limpa campos técnicos e saída para o Elasticsearch, com ID estável para não duplicar." |
+| 02:20 | Navegador: <http://localhost:9200/windows-events/_count> | "O Elasticsearch já tem os documentos reais indexados." |
+| 02:40 | Kibana: **Discover** → Data View **Eventos do Windows** → intervalo **Last 7 days** (ou **Search entire time range**) | "Os eventos mais recentes aparecem no topo." Abrir um documento e mostrar os campos. |
+| 03:10 | Barra de busca: `log.level : "Error"` + Enter (ou `"Warning"`, conforme o que existir no computador) | "Com a KQL, isolamos só os erros." |
+| 03:40 | Apagar a busca → campo `event.code` → **Visualize** → **Save** → *Title*: `IDs de evento mais frequentes` → **Existing** → *Eventos do Windows* → **Save and go to dashboard** → **Save** → **Exit edit** | "O Lens montou o gráfico a partir de um campo, e ele entra no dashboard." |
+| 04:30 | No dashboard, clicar em uma barra de **Eventos por nível** → **Apply** | "Um clique filtra todos os painéis. O dashboard também se atualiza sozinho a cada 30 segundos." |
+| 05:00 | Encerrar e voltar aos slides | "Windows, coletor, Logstash, Elasticsearch e Kibana: o fluxo completo, com dados reais." |
 
-Para desfazer o filtro do clique, remova o filtro `status_code: 500` no **x** e reabra o dashboard (ele volta ao intervalo salvo, 01/10/2026 das 07:00 às 19:00).
+Os valores (total, níveis, provedores) dependem do computador e do momento; não há números fixos a decorar. Para desfazer o filtro do clique, remova-o no **x** e reabra o dashboard.
 
-Se sobrar tempo: no Discover, `status_code : 401` mostra as 5 tentativas de login negadas, um exemplo de uso em segurança.
+## 4. Diagnóstico rápido
 
-## 3. Diagnóstico rápido
-
-No Windows PowerShell, use `curl.exe` em vez de `curl`.
-
-| Comando | Resultado esperado |
+| Comando | O que mostra |
 |---|---|
-| `docker compose ps` | `elasticsearch` e `kibana` com status `healthy` |
-| `curl http://localhost:9200` | JSON com `"number" : "9.5.5"` |
-| `curl "http://localhost:9200/_cat/indices/acessos?v"` | índice `acessos` com `docs.count` 70 (status `yellow` é normal com um nó) |
-| `curl http://localhost:5601/api/status` | `{"status":{"overall":{"level":"available"}}}` |
-| `docker compose logs --tail 50 kibana` | últimas linhas do log do Kibana |
-| `docker compose logs --tail 50 elasticsearch` | últimas linhas do log do Elasticsearch |
-| `docker stats --no-stream` | consumo de memória de cada container |
+| `docker compose ps` | Estado dos containers (`healthy` para Elasticsearch e Kibana) |
+| `docker compose logs --tail 50 logstash` | Leitura do arquivo e envio ao Elasticsearch; linhas inválidas aparecem aqui |
+| `curl.exe http://localhost:9200/windows-events/_count` | Quantidade de eventos no índice |
+| `Get-Content runtime\state\coletor.log -Tail 20` | Atividade do coletor, avisos e erros |
+| `Get-Content runtime\state\checkpoint.json` | Último `RecordId` exportado e horário da última verificação |
+| `docker stats --no-stream` | Memória usada por container |
 
-O log do Kibana registra avisos de recursos que a demonstração não usa (Fleet, Cloud Connect, telemetria) e, às vezes, erros genéricos `500 Server Error`. Nos testes, nenhum deles afetou a demonstração: o que importa é o status `healthy` e as telas funcionando.
+O log do Kibana registra avisos de recursos que a demonstração não usa (Fleet, Cloud Connect, telemetria) e, às vezes, erros genéricos `500 Server Error`; nos testes anteriores, nenhum deles afetou as telas usadas.
 
-## 4. Se algum container estiver parado
-
-1. Docker Desktop fechado: abrir e esperar o motor iniciar (*Engine running*).
-2. Rodar `docker compose up -d`: o comando só inicia o que estiver parado e não apaga dados.
-3. Kibana sem responder: `docker compose restart kibana` e esperar de 2 a 4 minutos.
-4. Container parado com `Exited (137)` ou tudo muito lento: falta de memória. Fechar programas e repetir o passo 2. No Windows, a memória da VM do Docker pode ser aumentada no arquivo `%UserProfile%\.wslconfig` (seção `[wsl2]`, linha `memory=6GB`, seguido de `wsl --shutdown`); no macOS, em Docker Desktop → *Settings → Resources*.
-5. Erro de porta em uso (9200 ou 5601): outro Elasticsearch ou Kibana está rodando na máquina. Pare-o e repita o passo 2.
-6. Log do Elasticsearch com `OutOfMemoryError` ou `circuit_breaking_exception`: aumentar a memória da JVM no `docker-compose.yml` para `ES_JAVA_OPTS=-Xms1g -Xmx1g` e rodar `docker compose up -d`.
-
-## 5. Plano de recuperação
+## 5. Problemas comuns
 
 | Sintoma | Ação |
 |---|---|
-| "Kibana server is not ready yet" | Aguardar até 4 minutos; conferir `docker compose logs --tail 50 kibana` e a memória (seção 4, passo 4). |
-| Upload: "Index name already exists" e **Import** desabilitado | Os dados já foram carregados (por exemplo, no ensaio). Seguir para o Discover, ou apagar o índice (seção 1, passo 7) e refazer. |
-| Upload termina com "Error creating data view" (`DuplicateDataViewError`) | **Create data view** ficou ligado. Os dados foram carregados normalmente; seguir. |
-| Discover sem resultados | Clicar em **Search entire time range** (os dados são de 01/10/2026). |
-| Dashboard vazio | Conferir o índice (`_cat/indices/acessos` com 70 documentos) e se o intervalo de tempo cobre 01/10/2026. |
-| Dashboard não aparece na lista | Reimportar `kibana/dashboard_acessos.ndjson`. |
-| Ambiente irrecuperável | `docker compose down -v`, `docker compose up -d`, reimportar o dashboard e refazer o upload (≈ 4 minutos). Durante a apresentação, usar a contingência. |
+| "A execução de scripts foi desabilitada neste sistema" | Usar sempre `powershell -ExecutionPolicy Bypass -File .\scripts\<script>.ps1` (vale só para aquele comando). |
+| "O Docker Engine não respondeu" | Abrir o Docker Desktop, esperar *Engine running* e rodar o script de novo. |
+| Contagem do índice fica em 0 | Ver `docker compose logs --tail 50 logstash` e o `coletor.log`; conferir se `runtime\logs\eventos.jsonl` existe. |
+| Índice com menos eventos que o arquivo | O Logstash ainda está lendo (aguardar) ou o arquivo tem linhas repetidas após uma falha (normal: o índice não duplica). |
+| Dashboard vazio | Conferir o intervalo de tempo (Last 7 days) e a contagem do índice. |
+| "Kibana server is not ready yet" | Aguardar até 4 minutos; conferir memória livre. |
+| Tudo lento ou container parado com `Exited (137)` | Falta de memória: fechar programas. No Windows, a memória da VM do Docker pode ser aumentada em `%UserProfile%\.wslconfig` (seção `[wsl2]`, `memory=6GB`, seguido de `wsl --shutdown`). |
+| `OutOfMemoryError` no Logstash ou no Elasticsearch | Aumentar `LS_JAVA_OPTS` para 512m ou `ES_JAVA_OPTS` para 1g no `docker-compose.yml` e rodar o script de início. |
+| Aviso de log limpo ou de eventos descartados no `coletor.log` | Informativo: o coletor recomeçou ou registrou a lacuna; nada a corrigir. |
 
-**Regra prática:** se o problema não for resolvido em cerca de 1 minuto, passar para a contingência.
+**Último recurso (apaga dados):** `docker compose down -v` remove o índice e os objetos do Kibana; apague também a pasta `runtime\` para coletar tudo de novo e rode o script de início (≈ 5 minutos). Não usar durante a apresentação.
+
+**Regra prática:** se um problema não for resolvido em cerca de 1 minuto durante a apresentação, passar para a contingência.
 
 ## 6. Contingência: gravação prévia
 
-A avaliação aceita gravação apenas como contingência em caso de dificuldade técnica justificada. Por isso:
+A avaliação aceita gravação apenas como contingência em caso de dificuldade técnica justificada:
 
-- **Quando gravar:** na véspera, durante o ensaio (seção 1, passo 6), seguindo exatamente a seção 2 (≈ 5 minutos).
-- **Como gravar:** no Windows, Xbox Game Bar (**Win + Alt + R** inicia e para a gravação da janela do navegador) ou OBS Studio; no macOS, **Cmd + Shift + 5**. Usar resolução 1920×1080, zoom de 125% e notificações desligadas. De preferência sem áudio, para narrar ao vivo.
+- **Quando gravar:** na véspera, durante o ensaio (seção 2), seguindo a seção 3 (≈ 5 minutos).
+- **Como gravar:** no Windows, Xbox Game Bar (**Win + Alt + R** inicia e para a gravação) ou OBS Studio. Resolução 1920×1080, zoom de 125%, notificações desligadas e, de preferência, sem áudio, para narrar ao vivo. Não mostrar mensagens de eventos nem dados pessoais.
 - **Onde guardar:** no computador da apresentação, para tocar sem internet, e uma cópia em pendrive. Testar a reprodução antes da aula.
-- **Como usar:** explicar brevemente à turma a dificuldade técnica, reproduzir o vídeo e narrar os mesmos pontos da coluna "Fala de apoio".
-- **Último recurso:** o slide de apoio ao final da apresentação mostra o dashboard esperado.
+- **Como usar:** explicar brevemente a dificuldade técnica, reproduzir o vídeo e narrar os pontos da coluna "Fala de apoio".

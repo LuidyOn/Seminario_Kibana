@@ -1,16 +1,19 @@
 # Kibana: conteúdo do seminário
 
-Material de apoio, em nível introdutório, para a parte teórica do seminário. Os números entre colchetes remetem a [referencias.md](referencias.md). O que aparece como "no nosso ambiente" foi observado na demonstração deste repositório (Elasticsearch e Kibana 9.5.5).
+Material de apoio, em nível introdutório, para a parte teórica do seminário. Os números entre colchetes remetem a [referencias.md](referencias.md). A demonstração usa **eventos reais do Windows** coletados no próprio computador da apresentação, processados pelo **Logstash** e analisados no **Kibana** (Elastic Stack 9.5.5). Os valores mostrados variam de um computador para outro.
 
 ## 1. O problema que o Kibana resolve
 
-Toda aplicação gera **logs**: a cada requisição, um registro com horário, rota acessada, resultado e tempo de resposta. Em pouco tempo são milhares de linhas, e lê-las uma a uma, ou mesmo em uma planilha, não responde bem a perguntas como:
+O Windows registra continuamente o que acontece com aplicativos e serviços: falhas, avisos, instalações, atualizações. Esses registros ficam no **Visualizador de Eventos**, separados em canais como Aplicativo (*Application*), Sistema e Segurança. No computador usado nos testes deste trabalho, o canal Aplicativo registrou cerca de 440 eventos em 24 horas (medido em 29/10/2026).
 
-- Quantas requisições falharam? Em qual rota?
-- A aplicação ficou lenta? A partir de quando?
-- Houve muitas tentativas de login negadas?
+Olhando evento por evento, é difícil responder:
 
-Para responder, é preciso **guardar** os dados de forma pesquisável e **visualizá-los** de modo que padrões e anomalias apareçam rápido. O Elasticsearch cuida da primeira parte; o Kibana, da segunda.
+- Quantos erros e avisos aconteceram na semana?
+- Quais aplicativos ou serviços mais registram eventos?
+- Em que momentos os problemas se concentram?
+- Chegou algum evento novo agora?
+
+Para responder, é preciso **coletar** os eventos, **guardá-los** de forma pesquisável e **visualizá-los**. Na Elastic Stack, o Logstash cuida da ingestão, o Elasticsearch armazena e pesquisa, e o Kibana apresenta.
 
 ## 2. O que é o Kibana
 
@@ -20,134 +23,144 @@ O Kibana é a **interface de usuário da Elastic Stack**: uma aplicação web pa
 - montar gráficos arrastando campos (**Lens**);
 - reunir visualizações em painéis interativos (**Dashboards**).
 
-## 3. Relação entre Kibana e Elasticsearch
+## 3. Relação entre Kibana, Elasticsearch e Logstash
 
-| | Elasticsearch | Kibana |
-|---|---|---|
-| Papel | Motor distribuído de busca e análise e repositório dos dados [1] | Interface para explorar e visualizar esses dados [1] |
-| Acesso | API REST (porta 9200) | Navegador (porta 5601) |
-| O que guarda | Os documentos (no nosso caso, o índice `acessos`) | Nenhum dado analisado. Até os objetos do próprio Kibana (Data Views, visualizações, dashboards) ficam em índices do Elasticsearch (`.kibana_*`, no nosso ambiente) |
+| | Logstash | Elasticsearch | Kibana |
+|---|---|---|---|
+| Papel | Coleta e prepara os dados: entradas, filtros e saídas [1] [9] | Motor de busca e análise e repositório dos dados [1] | Interface para explorar e visualizar os dados [1] |
+| Na demo | Lê o arquivo gerado pelo coletor e envia os eventos | Guarda o índice `windows-events` | Data View, Discover, Lens e Dashboard |
+| Acesso | Interno ao Docker | API REST (porta 9200) | Navegador (porta 5601) |
 
 Pontos importantes:
 
-- O Kibana **depende** do Elasticsearch: cada tabela ou gráfico é uma consulta enviada a ele.
-- A Elastic exige **a mesma versão** em todos os componentes da stack [1] [12]. Na demonstração, os dois estão na versão 9.5.5, a mais recente nas notas de versão oficiais em 07/10/2026 [15] [16].
+- O Kibana **não guarda os dados analisados**: cada tabela ou gráfico é uma consulta ao Elasticsearch. Até os objetos do próprio Kibana (Data Views, visualizações, dashboards) ficam em índices do Elasticsearch.
+- A Elastic exige **a mesma versão** em todos os componentes da stack [1] [20]. Na demonstração, os três estão na 9.5.5 [23] [24] [25].
 
 ## 4. Conceitos fundamentais
 
 | Conceito | Definição simples | Na nossa demonstração |
 |---|---|---|
+| **Logstash** | Mecanismo de coleta de dados com pipelines em tempo real [1] | Container `logstash` |
+| **Pipeline** | Caminho de cada evento: entrada → filtro → saída [9] | `logstash/pipeline/windows-events.conf` |
+| **JSON Lines** | Arquivo de texto com um objeto JSON por linha | `runtime/logs/eventos.jsonl` |
 | **Elasticsearch** | Motor de busca e análise que armazena dados como documentos JSON [1] [2] | Container `elasticsearch` |
-| **Índice** | Unidade fundamental de armazenamento do Elasticsearch [2] | `acessos` |
-| **Documento** | Registro em JSON formado por campos, isto é, pares chave-valor [2] | Uma linha do CSV vira um documento (uma requisição) |
-| **Campo** | Cada atributo do documento; o tipo de cada campo é definido no *mapping* do índice [2] | `status_code` (número), `endpoint` (keyword), `@timestamp` (data) |
-| **Data View** | Diz ao Kibana quais índices consultar e qual campo representa o tempo [3] | `acessos`, com campo de tempo `@timestamp` |
-| **Discover** | Ferramenta para explorar, pesquisar e filtrar documentos [4] | Ver as 70 requisições e isolar os erros |
-| **Lens** | Editor de visualizações: arrasta-se o campo e o Kibana sugere o gráfico [6] | Gráfico "Endpoints mais acessados" |
-| **Dashboard** | Painel que combina várias visualizações em uma única tela interativa [7] | "Acessos da aplicação (logs fictícios)" |
+| **Índice** | Unidade fundamental de armazenamento do Elasticsearch [2] | `windows-events` |
+| **Documento** | Registro em JSON formado por campos (pares chave-valor) [2] | Um evento do Windows |
+| **Campo** | Cada atributo do documento, com tipo definido no *mapping* do índice [2] | `log.level` (keyword), `@timestamp` (date), `winlog.record_id` (long) |
+| **Data View** | Diz ao Kibana quais índices consultar e qual campo representa o tempo [3] | `windows-events`, campo de tempo `@timestamp` |
+| **Discover** | Ferramenta para explorar, pesquisar e filtrar documentos [4] | Ver os eventos e filtrar por nível |
+| **Lens** | Editor de visualizações: arrasta-se o campo e o Kibana sugere o gráfico [6] | Gráfico dos IDs de evento mais frequentes |
+| **Dashboard** | Painel que combina várias visualizações numa única tela interativa [7] | "Eventos do Windows" |
 
-Também usamos a **KQL** (*Kibana Query Language*), linguagem textual de filtro [5]. Exemplos: `status_code >= 500`, `endpoint : "/login" and status_code : 401`. A KQL apenas filtra; não agrega, não transforma e não ordena [5].
+Também usamos a **KQL** (*Kibana Query Language*), linguagem textual de filtro [5]. Exemplos: `log.level : "Error"` e `log.level : "Warning" or log.level : "Error"`. A KQL apenas filtra; não agrega, não transforma e não ordena [5].
 
-**Por que o tipo do campo importa:** só um campo numérico permite calcular média, só um campo de data permite um histograma no tempo e um campo `keyword` serve para agrupar e filtrar por valor exato. No upload do nosso CSV, o Kibana inferiu: `endpoint` e `method` como `keyword`, `status_code` e `response_time_ms` como `long` e `timestamp` como `date`. Ele também criou o campo `@timestamp` (padrão do ecossistema Elastic), já convertido para UTC a partir do fuso `-03:00` do arquivo.
+**Por que o tipo do campo importa:** um campo `keyword` serve para agrupar e filtrar por valor exato (nível, provedor), um campo de data permite o histograma no tempo e um campo numérico permite ordenar e calcular. Os tipos do índice `windows-events` são definidos por um *template* instalado pelo próprio Logstash [12].
 
-## 5. Arquitetura básica
+## 5. Logstash
+
+O Logstash processa cada evento em três estágios: **entradas** geram eventos, **filtros** os modificam e **saídas** os enviam a outro lugar [9]. *Codecs* decodificam ou codificam os dados dentro de uma entrada ou saída, sem precisar de um filtro separado [9].
+
+O pipeline da demonstração (`logstash/pipeline/windows-events.conf`):
+
+| Estágio | Plugin | O que faz |
+|---|---|---|
+| Entrada | `file` | Acompanha `eventos.jsonl` e lê cada linha nova; o *sincedb* guarda até onde o arquivo já foi lido [10] |
+| Codec | `json` | Converte cada linha em evento. A Elastic orienta usar `json`, e não `json_lines`, com entradas orientadas a linhas como `file` [11] |
+| Filtro | `mutate` | Remove campos técnicos acrescentados pelo Logstash |
+| Saída | `elasticsearch` | Grava no índice `windows-events` usando o ID do próprio evento (`document_id`), o que sobrescreve em vez de duplicar [12] |
+
+No Docker, o diretório de pipelines é montado em `/usr/share/logstash/pipeline/`, substituindo o pipeline de exemplo da imagem [13]. A memória da JVM foi limitada a 256 MB via `LS_JAVA_OPTS` [14] por causa do volume mínimo da demo; é bem abaixo da recomendação da Elastic para ingestão típica (4 a 8 GB) [14].
+
+## 6. Coleta dos eventos do Windows
+
+O coletor `scripts/coletar_eventos.ps1` usa o cmdlet `Get-WinEvent`, que lê os logs de eventos do Windows e devolve os eventos do mais recente para o mais antigo [15]. O canal Aplicativo pode ser lido sem privilégios de administrador.
+
+- **Primeira execução:** amostra com os eventos dos últimos 7 dias, limitada a 2.000.
+- **Depois:** a cada 15 segundos, lê só os eventos com `RecordId` maior que o último exportado (checkpoint em `runtime/state/checkpoint.json`). Como o `RecordId` é único e crescente no canal, horários empatados não causam problema.
+- **Nível normalizado** a partir do valor numérico do evento [16] [17]: 1 Critical, 2 Error, 3 Warning, 4 Information, 5 Verbose. O nível 0 (*LogAlways*) aparece como "Informações" no Visualizador de Eventos e também vira Information.
+- **Privacidade:** são exportados apenas horário (UTC), canal, provedor, ID do evento, `RecordId`, nível e um identificador aleatório da instalação. A mensagem do evento, usuário, nome do computador e dados internos do evento **não** são exportados. A pasta `runtime/` fica fora do Git.
+- **Sem duplicação:** cada evento recebe um ID estável (`Application-<RecordId>-<horário>`). Se o coletor ou o Logstash relerem eventos, o Elasticsearch apenas sobrescreve o mesmo documento.
+- **Transparência:** se o log for limpo, ou se eventos forem descartados pelo log circular do Windows antes da coleta, o coletor registra um aviso em `runtime/state/coletor.log`.
+- **Não é instantâneo:** um evento novo aparece no Kibana depois do intervalo de leitura (até 15 s) mais o tempo de leitura do Logstash.
+
+## 7. Arquitetura básica
 
 ```text
-Fonte de dados  ──►  Elasticsearch  ──►  Kibana  ──►  Navegador
-(CSV de logs)        (índice acessos)    (Data View,     (usuário)
-                                          Discover, Lens,
-                                          Dashboard)
+Windows Event Log (canal Application)
+      │  Get-WinEvent a cada 15 s
+      ▼
+Coletor PowerShell ──► runtime/logs/eventos.jsonl (um JSON por linha)
+                              │  leitura contínua do arquivo
+                              ▼
+               Logstash ──► Elasticsearch (índice windows-events) ──► Kibana ──► navegador
+               └────────────── Docker Compose (local) ──────────────┘
 ```
 
-1. **Ingestão:** os dados precisam chegar ao Elasticsearch. Em produção isso costuma ser feito por Elastic Agent ou Logstash [1], ou diretamente pelas APIs. Na demonstração, usamos o recurso **Upload a file** do Kibana: ele analisa o arquivo, sugere os tipos dos campos, cria o índice e envia os documentos [9].
-2. **Armazenamento e busca:** o Elasticsearch indexa os documentos e responde às consultas.
-3. **Visualização:** o Kibana transforma cliques e filtros em consultas ao Elasticsearch e desenha o resultado.
+O coletor roda no Windows (fora do Docker), porque precisa ler o log de eventos do próprio computador. Logstash, Elasticsearch e Kibana rodam em containers iniciados pelo `docker compose`. Em produção, a Elastic oferece o Elastic Agent como forma unificada de coletar logs e métricas de um computador [1]; aqui o coletor simples mantém o foco no Logstash e no Kibana.
 
-Na demonstração, Elasticsearch e Kibana rodam em containers Docker, com um único nó, iniciados por `docker compose up -d`. É um ambiente de desenvolvimento, não de produção [10] [13].
+## 8. Data Views
 
-## 6. Data Views
+O Data View é a "ponte" entre o Kibana e os índices: sem ele, os dados não aparecem no Discover nem no Lens [3]. Ele define o padrão de índice (`windows-events`) e o campo de tempo (`@timestamp`); sem campo de tempo, não há filtro de tempo global nos dashboards [3].
 
-O Data View é a "ponte" entre o Kibana e os índices: sem ele, os dados não aparecem no Discover nem no Lens [3]. Ele define:
+## 9. Discover
 
-- o **padrão de índice** (um nome como `acessos` ou um curinga como `logs-*`);
-- o **campo de tempo**. Sem um campo de tempo padrão, não é possível usar o filtro de tempo global nos dashboards [3].
+O Discover é a principal ferramenta para explorar os dados do Elasticsearch no Kibana [4]: mostra os documentos e o histograma no tempo, aceita pesquisas em KQL, Lucene ou ES|QL e exibe estatísticas de cada campo [4]. Ele sempre trabalha dentro de um intervalo de tempo; se nada aparecer, o botão **Search entire time range** amplia o intervalo.
 
-Na demonstração, o Data View `acessos` vem no arquivo exportado `kibana/dashboard_acessos.ndjson`, com `@timestamp` como campo de tempo.
+## 10. Lens
 
-## 7. Discover
+O Lens é o editor de visualizações do Kibana para gráficos, tabelas, mapas e métricas [6]: arrasta-se um campo e ele sugere visualizações [6]. Atalho usado na demonstração: no Discover, clicar em um campo e escolher **Visualize** abre o Lens com um gráfico daquele campo.
 
-O Discover é a principal ferramenta para explorar os dados do Elasticsearch no Kibana [4]. Nele é possível:
+## 11. Dashboard
 
-- ver os documentos e o histograma de quantidade ao longo do tempo;
-- pesquisar com KQL, Lucene ou ES|QL e aplicar filtros [4];
-- ver estatísticas de cada campo e abrir um documento para ver todos os seus campos [4].
+Um dashboard combina várias visualizações numa única visão interativa [7]. O filtro de tempo e a barra de pesquisa valem para todos os painéis, e clicar em um gráfico cria filtros aplicados ao painel inteiro. Dashboards, visualizações e Data Views são **objetos salvos**, exportados e importados como arquivos NDJSON [8]. O dashboard da demo (`kibana/dashboard_eventos.ndjson`) é importado automaticamente pelo script de início e se atualiza a cada 30 segundos.
 
-O Discover sempre trabalha dentro de um **intervalo de tempo**. Como nossos dados são de 01/10/2026, o intervalo padrão ("Last 15 minutes") não mostra nada; o botão **Search entire time range** ajusta o intervalo para todo o período dos dados.
-
-## 8. Lens
-
-O Lens é o editor de visualizações do Kibana para gráficos, tabelas, mapas e métricas [6]. Arrasta-se um campo para a área de trabalho e ele **sugere** visualizações [6]. Tipos disponíveis incluem barras, linhas, áreas, pizza, treemap, métrica, gauge, tabela e mapa de calor [6].
-
-Atalho usado na demonstração: no Discover, clicar em um campo e escolher **Visualize** abre o Lens com um gráfico pronto daquele campo.
-
-## 9. Dashboard
-
-Um dashboard combina várias visualizações, métricas e controles em uma única visão interativa [7]:
-
-- o **filtro de tempo** e a barra de pesquisa valem para todos os painéis;
-- **clicar em um gráfico** cria filtros que se aplicam ao painel inteiro (na demonstração, clicar na barra vermelha das 14h filtra todos os painéis para os erros 500 daquele horário);
-- dashboards podem ser compartilhados [7] e, como outros **objetos salvos**, exportados e importados em arquivos NDJSON [8]. É assim que o dashboard da demonstração é distribuído neste repositório.
-
-## 10. Vantagens
+## 12. Vantagens
 
 - **Exploração sem código:** pesquisar, filtrar e criar gráficos pela interface.
-- **Integração nativa com o Elasticsearch:** as buscas e agregações são executadas pelo motor que armazena os dados.
+- **Integração nativa:** as buscas e agregações são executadas pelo Elasticsearch.
+- **Ingestão flexível:** o Logstash combina entradas, filtros e saídas por configuração [9].
 - **Interatividade:** filtro de tempo global e filtros por clique em todos os painéis.
-- **Rapidez para prototipar:** o Lens sugere a visualização a partir do campo escolhido.
-- **Gratuito para o essencial:** a demonstração inteira roda na licença gratuita *Basic* (confirmado no nosso ambiente); a Elastic oferece o nível *Free and open* [17].
-- **Portabilidade:** dashboards e visualizações podem ser exportados e importados como arquivo [8].
+- **Gratuito para o essencial:** a demonstração roda na licença gratuita *Basic*; a Elastic oferece o nível *Free and open* [26].
+- **Portabilidade:** pipeline, mapeamento e dashboard ficam no repositório; cada computador coleta os próprios eventos.
 
-## 11. Limitações
+## 13. Limitações
 
-- **Depende do Elasticsearch:** o Kibana visualiza o que está no Elasticsearch; os dados precisam ser ingeridos antes.
-- **Consumo de recursos:** mesmo nesta demo mínima, o Kibana sozinho usou cerca de 1,5 GB de memória no nosso ambiente; somado ao Elasticsearch, é preciso ter cerca de 3 GB livres.
-- **Curva de aprendizado:** mapeamento de campos, linguagens de consulta (KQL, Lucene, ES|QL) e uma interface com muitos menus.
-- **Segurança exige configuração:** a segurança vem ativada por padrão no Elasticsearch, e desativá-la "não é recomendado" [14]. Aqui ela foi desligada apenas para simplificar a demonstração local.
-- **Recursos pagos:** parte dos recursos avançados exige assinatura; por exemplo, regras de alerta baseadas em detecção de anomalias só existem nos níveis Platinum e Enterprise [17].
-- **Upload a file não é ingestão de produção:** o recurso serve para exploração inicial, não para um processo repetitivo de produção [9].
+- **Mais componentes, mais memória:** são três serviços. Elasticsearch e Kibana já ocuparam cerca de 2,5 GB nos testes anteriores, e o Logstash acrescenta outra JVM (consumo ainda não medido neste projeto).
+- **Coleta periódica:** os eventos chegam em ciclos de 15 s, não no instante em que acontecem.
+- **Escopo restrito por escolha:** só o canal Aplicativo e só metadados; sem mensagens, por privacidade.
+- **Segurança exige configuração:** desativar a segurança "não é recomendado" [22]; aqui ela foi desligada apenas para simplificar a demonstração local.
+- **Solução didática para Windows:** um computador, um nó, sem alta disponibilidade; não é uma arquitetura de produção.
+- **Recursos pagos:** parte dos recursos avançados exige assinatura; por exemplo, regras de alerta baseadas em detecção de anomalias só existem nos níveis Platinum e Enterprise [26].
 
-## 12. Exemplos de uso
+## 14. Exemplos de uso
 
-- **Monitoramento de logs de aplicações** (o caso da demonstração): erros, lentidão e rotas mais usadas. A Elastic oferece uma solução de observabilidade voltada a logs [18].
-- **Segurança:** investigar tentativas de login negadas (status 401) e eventos suspeitos. A solução Elastic Security (SIEM) usa os recursos de visualização do Kibana [19].
-- **Infraestrutura:** acompanhar métricas de servidores e serviços.
-- **Indicadores de negócio:** por exemplo, pedidos por hora ou por canal, desde que os dados estejam no Elasticsearch.
+- **Suporte e TI:** encontrar falhas de aplicativos e serviços recorrentes nos computadores de uma equipe.
+- **Monitoramento de logs:** a solução de observabilidade da Elastic é voltada a logs em grande escala [27].
+- **Segurança:** a solução Elastic Security (SIEM) usa os recursos de visualização do Kibana [28].
+- **Vários computadores:** em produção, agentes como o Elastic Agent enviam logs de muitas máquinas para o mesmo Elasticsearch [1].
 
-## 13. A nossa demonstração
+## 15. A nossa demonstração
 
-**Cenário:** logs fictícios de uma loja virtual em 01/10/2026, das 08h às 18h.
+**Fonte:** canal Aplicativo do Windows do próprio computador da apresentação, apenas metadados (seção 6).
 
 | Campo | Exemplo | Significado |
 |---|---|---|
-| `timestamp` | `2026-10-01T14:11:00-03:00` | Data e hora da requisição (horário de Brasília) |
-| `endpoint` | `/pedidos` | Rota acessada |
-| `method` | `POST` | Método HTTP |
-| `status_code` | `500` | Resultado (200 ok, 401 não autorizado, 404 não encontrado, 500 erro interno) |
-| `response_time_ms` | `2350` | Tempo de resposta em milissegundos |
+| `@timestamp` | `2026-10-29T14:05:12.000Z` | Quando o evento ocorreu (UTC; o Kibana exibe no fuso do navegador) |
+| `log.level` | `Error` | Nível normalizado: Critical, Error, Warning, Information ou Verbose |
+| `event.provider` | `Application Error` | Provedor (fonte) do evento |
+| `event.code` | `1000` | ID do evento |
+| `winlog.record_id` | `50123` | Número sequencial do evento no canal |
 
-**O que os dados revelam:**
-
-- 70 requisições: 54 com sucesso (200), 5 logins negados (401), 5 acessos a uma página inexistente (404) e 6 erros internos (500);
-- tempo médio de resposta de 343 ms;
-- **incidente:** entre 14h11 e 15h03, o endpoint `/pedidos` retornou erro 500 seis vezes, com respostas de cerca de 2 a 3 segundos (mesmo as respostas bem-sucedidas desse período ficaram lentas); a partir de 15h24 ele voltou ao normal.
+Os exemplos acima ilustram o formato; os dados reais variam conforme o computador.
 
 **Como cada passo se liga aos conceitos:**
 
 | Passo | Conceito |
 |---|---|
-| Mostrar o CSV | Fonte de dados |
-| Upload a file | Ingestão: o CSV vira o **índice** `acessos`, cada linha um **documento**, cada coluna um **campo** com tipo |
-| Discover | Explorar os documentos dentro de um intervalo de tempo, pelo **Data View** |
-| Filtro KQL `status_code >= 500` | Encontrar uma situação específica (os 6 erros) |
-| Lens | Transformar um campo em gráfico (endpoints mais acessados) |
+| Visualizador de Eventos | Fonte de dados |
+| Coletor e `eventos.jsonl` | Coleta automática e incremental, JSON Lines |
+| Logstash | Pipeline: entrada `file` → filtro → saída `elasticsearch` |
+| Elasticsearch | Índice `windows-events`, documentos e tipos dos campos |
+| Discover e filtro KQL | Explorar documentos dentro de um intervalo de tempo, pelo Data View |
+| Lens | Transformar um campo em gráfico |
 | Dashboard | Reunir as visualizações; um clique filtra todos os painéis |
