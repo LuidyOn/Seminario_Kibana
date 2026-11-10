@@ -8,6 +8,31 @@ Demonstração didática do **Kibana** para o seminário técnico da disciplina 
 
 Mostrar, com **eventos reais do Windows do próprio computador**, como os dados são coletados automaticamente, processados pelo **Logstash**, armazenados no **Elasticsearch** e analisados no **Kibana**: Discover, filtros KQL, Lens e Dashboard.
 
+## Guia interativo de estudos
+
+O site em [estudo-web/](estudo-web/) reúne os 12 slides, as falas de Luiz e Yahn, o cronômetro de ensaio, o roteiro prático e os exercícios de revisão. O progresso fica no navegador. O site funciona com a stack desligada.
+
+### Abrir no computador
+
+Com Node.js 24, execute na raiz do repositório:
+
+```powershell
+cd estudo-web
+npm.cmd ci
+npm.cmd run dev
+```
+
+Abra [http://localhost:5173](http://localhost:5173). Para gerar os arquivos estáticos em `estudo-web/dist/`, rode `npm.cmd run build` na pasta do site. Confira o build com `npm.cmd run preview` em [http://localhost:4173](http://localhost:4173).
+
+### Publicar no GitHub Pages
+
+1. Faça o push do commit para `main` com `git push origin main`.
+2. No repositório do GitHub, abra **Settings → Pages → Build and deployment → Source** e selecione **GitHub Actions**.
+3. Abra **Actions → Publicar guia de estudos → Run workflow**. Selecione `main` e clique em **Run workflow**.
+4. Após o job **deploy** concluir, volte a **Settings → Pages → Visit site** e copie a URL mostrada pelo GitHub. O endereço padrão de um projeto é `https://<usuario>.github.io/<repositorio>/`.
+
+O [workflow](.github/workflows/estudo-pages.yml) publica somente o build de `estudo-web/dist/`. Se o plano ou as configurações impedirem o Pages público, gere o build local e publique somente o conteúdo de `dist/` em uma hospedagem estática ou em um repositório público separado habilitado para Pages. Os links do roteiro para as portas 5601 e 9200 funcionam na máquina em que a stack roda.
+
 ## Demonstração prática — Guia rápido (5 minutos)
 
 1. **Visualizador de Eventos**
