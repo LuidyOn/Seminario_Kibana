@@ -1,92 +1,99 @@
 # Roteiro da apresentação (≈ 16 minutos)
 
-Apoio para uma fala natural, não um texto para decorar. O limite da avaliação é de 7 a 20 minutos; o plano abaixo fica em cerca de 16 minutos, com folga nos dois sentidos. Os números dos slides seguem `slides/seminario_kibana.pptx`, e as notas do apresentador de cada slide repetem estes pontos.
-
-## Visão geral
+A narrativa começa com uma situação hipotética de suporte. As telas e os dados da demonstração vêm do ambiente real do projeto. O plano usa 16 minutos dentro da janela de 7 a 20 minutos da avaliação.
 
 | Bloco | Slides | Tempo | Acumulado |
-|---|---|---|---|
-| Abertura e problema | 1–2 | 1 min 40 s | 1:40 |
-| Kibana, Elasticsearch e conceitos | 3–5 | 3 min 20 s | 5:00 |
-| Arquitetura e Logstash | 6–7 | 2 min 30 s | 7:30 |
-| Dados reais e privacidade | 8 | 1 min | 8:30 |
-| Demonstração ao vivo | 9 | 5 min | 13:30 |
-| Vantagens, limitações e usos | 10–11 | 1 min 50 s | 15:20 |
-| Referências e conclusão | 12–13 | 40 s | ≈ 16:00 |
+|---|---|---:|---:|
+| Abertura e situação-problema | 1–2 | 1 min 30 s | 1:30 |
+| Arquitetura, coleta e ingestão | 3–5 | 3 min 40 s | 5:10 |
+| Elasticsearch e exploração no Kibana | 6–8 | 3 min 20 s | 8:30 |
+| Vantagens, limitações e aplicações | 9–10 | 2 min | 10:30 |
+| Demonstração ao vivo | 11 | 5 min | 15:30 |
+| Conclusão e perguntas | 12 | 30 s | 16:00 |
 
-Uma pessoa pode conduzir os slides 1 a 8 enquanto a outra confere o ambiente. Durante a demonstração, uma opera o computador e a outra narra. O grupo pode dividir os slides 10 a 13.
-
-**Se o tempo apertar:** pular o passo do clique no dashboard e resumir os slides 4 e 5.
+**Divisão sugerida.** Luiz conduz os slides 1 a 5. Yahn assume quando o evento chega ao Elasticsearch e apresenta os slides 6 a 10. Durante a demonstração, um opera o computador enquanto o outro narra. O grupo fecha com o slide 12 e deixa a tela de perguntas aberta.
 
 ## Slide a slide
 
-### 1. Kibana na prática (0:00–0:20)
-- Apresentar o tema e o grupo.
-- "Vamos transformar eventos reais do Windows em respostas visuais."
+### 1. Kibana (0:00–0:25)
 
-### 2. Análise de eventos do Windows (0:20–1:40)
-- No computador de testes, o canal Aplicativo registrou cerca de 440 eventos em 24 horas em 29/10/2026.
-- No Visualizador de Eventos, a leitura é evento a evento: quantos erros? de quais aplicativos? quando?
-- **Transição:** "precisamos coletar, guardar e visualizar."
+“Imaginem que vocês cuidam do suporte de um laboratório. Alguns aplicativos começam a falhar, mas vocês ainda não sabem quando começou, quantas vezes aconteceu nem quais componentes estão envolvidos. Como vocês investigariam?”
 
-### 3. O que é o Kibana (1:40–2:40)
-- Elasticsearch armazena e pesquisa; Kibana é a interface web para explorar e visualizar.
-- O Kibana não guarda os dados analisados: cada gráfico é uma consulta.
-- Toda a stack na mesma versão (9.5.5 na demo).
+Apresentar Luiz Oliveira e Yahn Freitas e passar para a fonte dos registros.
 
-### 4. Documentos e índices (2:40–3:50)
-- Uma linha do arquivo JSON Lines vira um documento no índice `windows-events`.
-- Índice = conjunto de documentos; documento = um evento; campo = cada atributo, com tipo.
-- Use `keyword` para agrupar e filtrar, `date` para a linha do tempo e `long` para números inteiros. A releitura atualiza o documento de mesmo ID.
+### 2. Aplicativos começaram a falhar (0:25–1:30)
 
-### 5. Ferramentas do Kibana (3:50–5:00)
-- Data View aponta para o índice e o campo de tempo; Discover explora; Lens cria gráficos; Dashboard reúne tudo.
-- KQL: `log.level : "Error"`.
+Mostrar a captura real do canal Aplicativo. Apontar horário, nível, fonte e ID. Pedir à turma que imagine procurar um pico ou uma origem entre muitos registros. O cenário do laboratório é hipotético. A medição histórica de cerca de 440 eventos em 24 horas pertence ao computador de teste em 29/10/2026.
 
-### 6. Arquitetura da demonstração (5:00–6:10)
-- No Windows: Event Log → coletor PowerShell (a cada 15 s) → `eventos.jsonl`.
-- No Docker, o Logstash lê o JSONL e envia os eventos ao Elasticsearch. O Kibana consulta o Elasticsearch.
-- O coletor fica fora do Docker porque lê o log do próprio computador.
+**Transição.** “Para responder a essas perguntas, precisamos conseguir pesquisar o conjunto de registros.”
 
-### 7. Pipeline do Logstash (6:10–7:30)
-- A entrada `file` usa o codec `json`. O `sincedb` guarda a posição de leitura.
-- O filtro `mutate` remove campos técnicos. A saída grava no índice `windows-events` com um ID estável por evento.
-- A ingestão acompanha o arquivo continuamente, enquanto o coletor verifica o Windows em ciclos.
+### 3. Dos registros ao painel (1:30–2:45)
 
-### 8. Dados reais e privacidade (7:30–8:30)
-- O que coletamos (horário, nível, provedor, ID) e o que fica de fora (mensagem, usuário, nome do computador).
-- Amostra inicial de 7 dias e verificação a cada 15 s; os números variam conforme o computador.
-- Horário e provedor podem revelar contexto. A pasta `runtime/` fica fora do Git.
-- Pergunta-guia: "o que o próprio Windows registrou nesta semana?"
+Seguir a trilha no slide. O Windows fornece os eventos. PowerShell e JSONL ficam no computador. Logstash, Elasticsearch e Kibana ficam nos containers. As setas de consulta e resposta mostram o papel do Elasticsearch e do Kibana.
 
-### 9. Demonstração prática (8:30–13:30)
-- Usar o [guia rápido no README](../README.md#demonstração-prática--guia-rápido-5-minutos) ou a seção 3 do [roteiro detalhado](roteiro_demonstracao.md).
-- Ao final, ligar cada passo aos conceitos dos slides 4 a 7.
+**Transição.** “O primeiro passo é ler os eventos que o Windows já tem.”
 
-### 10. Vantagens (13:30–14:20)
-- Visualização sem programação no Kibana. A coleta e a ingestão usam scripts e configurações.
-- Integração nativa com o Elasticsearch, ingestão flexível, filtros interativos, licença Basic e portabilidade.
+### 4. Coleta dos eventos (2:45–3:55)
 
-### 11. Limitações e casos de uso (14:20–15:20)
-- Três serviços consomem mais memória. A coleta verifica apenas o canal Aplicativo a cada 15 s e exporta metadados.
-- A configuração sem autenticação ou TLS serve somente para a demonstração local. Em produção, configure a segurança.
-- Usos: suporte e TI, monitoramento de logs, segurança (SIEM), vários computadores com agentes.
+Mostrar a cadência de 15 segundos, a retomada pelo `RecordId` do checkpoint e a linha JSONL gerada para cada evento novo. Explicar quais metadados entram e por que mensagem, usuário e nome da máquina ficam fora.
 
-### 12. Referências (15:20–15:35)
-- Citar a documentação oficial da Elastic e da Microsoft. A [lista completa](referencias.md) acompanha os materiais.
+**Transição.** “Agora que temos o arquivo, alguém precisa acompanhá-lo.”
 
-### 13. Conclusão (15:35–16:00)
-- O Windows fornece os eventos do canal Aplicativo.
-- O Logstash prepara os registros e o Elasticsearch os indexa.
-- O Kibana permite investigar os dados com filtros e gráficos. Abrir para perguntas.
+### 5. Logstash (3:55–5:10)
+
+Percorrer **Input → Filter → Output**. A entrada `file` com codec `json` lê o arquivo e o `sincedb` guarda a posição. O `mutate` remove campos técnicos. A saída envia ao Elasticsearch com o ID estável do evento.
+
+**Passagem para o segundo apresentador.** “Agora o evento chegou ao Elasticsearch. Vamos ver como ele fica organizado para consulta.”
+
+### 6. Elasticsearch (5:10–6:20)
+
+No exemplo ilustrativo, apontar o documento, o índice `windows-events` e os campos. Relacionar `date` ao tempo, `keyword` a filtros e agrupamentos, e `long` ao número do registro.
+
+**Transição.** “Com os documentos pesquisáveis, voltamos à pergunta sobre os erros da semana.”
+
+### 7. O que é o Kibana (6:20–7:15)
+
+Usar a pergunta “Que erros ocorreram nesta semana?”. O Kibana envia a consulta. O Elasticsearch pesquisa e agrega. A resposta aparece no navegador em uma lista ou gráfico.
+
+**Transição.** “Este é o caminho que vamos repetir ao vivo no Kibana.”
+
+### 8. Ferramentas do Kibana (7:15–8:30)
+
+Acompanhar a sequência Data View, Discover, KQL, Lens e Dashboard. Na captura real, apontar o filtro `log.level : "Error"`. O Lens entra depois para transformar um campo em gráfico. O dashboard reúne as visualizações e compartilha os filtros.
+
+**Transição.** “O que esse caminho facilita para quem está investigando?”
+
+### 9. Vantagens (8:30–9:25)
+
+Mostrar que gráficos e filtros podem ser configurados pela interface. A busca usa o Elasticsearch. A ingestão é flexível e pode receber outras fontes. Os recursos da demonstração funcionam na licença Basic.
+
+**Transição.** “O que roda neste computador já mostra o fluxo, mas uma instalação de produção tem outras exigências.”
+
+### 10. Limitações e aplicações (9:25–10:30)
+
+Mencionar memória, intervalo de coleta, manutenção e escopo local. Explicar que em produção é preciso configurar autenticação e TLS. Dar exemplos de suporte, observabilidade, logs centralizados e segurança em soluções apropriadas.
+
+**Transição.** “Agora vamos acompanhar esse processo funcionando.”
+
+### 11. Demonstração prática (10:30–15:30)
+
+Exibir a captura do dashboard imediatamente antes de alternar para o ambiente ao vivo. Executar uma única sequência, da origem ao dashboard. Usar o [guia rápido no README](../README.md#demonstração-prática--guia-rápido-5-minutos) ou a seção 3 do [roteiro detalhado](roteiro_demonstracao.md).
+
+**Transição.** “Voltando à pergunta do laboratório, o que conseguimos descobrir a partir dos registros?”
+
+### 12. Perguntas? (15:30–16:00)
+
+Retomar a situação inicial. O Windows produz eventos reais. Logstash e Elasticsearch preparam e tornam esses registros pesquisáveis. O Kibana permite explorá-los com filtros e gráficos. Deixar o slide aberto para perguntas.
+
+As fontes da Elastic e da Microsoft estão nas notas pertinentes e na [bibliografia completa](referencias.md).
 
 ## Perguntas prováveis
 
 | Pergunta | Resposta curta |
 |---|---|
-| Qual a diferença entre Logstash, Elasticsearch e Kibana? | O Logstash coleta e prepara, o Elasticsearch armazena e pesquisa, o Kibana mostra. |
+| Qual a diferença entre Logstash, Elasticsearch e Kibana? | O Logstash lê o arquivo e prepara os eventos. O Elasticsearch armazena e pesquisa. O Kibana consulta e mostra a resposta. |
 | Por que um coletor em PowerShell, e não o Logstash lendo o Windows direto? | O coletor roda no Windows e lê o log de eventos com `Get-WinEvent`; o Logstash roda no Docker e lê o arquivo gerado. Em produção, a Elastic oferece o Elastic Agent para coletar de cada computador [1]. |
-| Os eventos aparecem em tempo real? | Quase: o coletor verifica a cada 15 s e o Logstash lê o arquivo em seguida. Não é instantâneo. |
+| Os eventos aparecem em tempo real? | O coletor verifica a cada 15 s. Depois vêm a leitura do Logstash e a indexação no Elasticsearch. |
 | Que dados entram na pipeline? | Horário, nível, provedor, ID, número do evento e identificador aleatório da instalação. Mensagens, usuário e nome do computador ficam de fora. A coleta fica no computador. |
 | E se o coletor ou o Logstash relerem eventos? | Cada evento tem um ID estável; o Elasticsearch sobrescreve o mesmo documento, sem duplicar. |
 | Por que a segurança foi desligada? | Para simplificar a demo local. A Elastic não recomenda desligar [22]; as portas só aceitam acesso da própria máquina. |
