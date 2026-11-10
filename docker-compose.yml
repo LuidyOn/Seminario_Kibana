@@ -24,7 +24,7 @@ services:
   logstash:
     image: docker.elastic.co/logstash/logstash:9.5.5   # mesma versão do Elasticsearch e do Kibana
     environment:
-      - LS_JAVA_OPTS=-Xms256m -Xmx256m    # pipeline pequeno; valor ainda não validado no fluxo completo (ver README)
+      - LS_JAVA_OPTS=-Xms256m -Xmx256m    # heap da JVM para o volume da demonstração
     volumes:
       - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
       - ./logstash/windows-events-template.json:/usr/share/logstash/templates/windows-events-template.json:ro

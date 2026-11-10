@@ -40,7 +40,7 @@ Pontos importantes:
 
 | Conceito | Definição simples | Na nossa demonstração |
 |---|---|---|
-| **Logstash** | Mecanismo de coleta de dados com pipelines em tempo real [1] | Container `logstash` |
+| **Logstash** | Organiza a ingestão de dados em entradas, filtros e saídas [1] [9] | Container `logstash` |
 | **Pipeline** | Caminho de cada evento: entrada → filtro → saída [9] | `logstash/pipeline/windows-events.conf` |
 | **JSON Lines** | Arquivo de texto com um objeto JSON por linha | `runtime/logs/eventos.jsonl` |
 | **Elasticsearch** | Motor de busca e análise que armazena dados como documentos JSON [1] [2] | Container `elasticsearch` |
@@ -78,7 +78,7 @@ O coletor `scripts/coletar_eventos.ps1` usa o cmdlet `Get-WinEvent`, que lê os 
 - **Primeira execução:** amostra com os eventos dos últimos 7 dias, limitada a 2.000.
 - **Depois:** a cada 15 segundos, lê só os eventos com `RecordId` maior que o último exportado (checkpoint em `runtime/state/checkpoint.json`). Como o `RecordId` é único e crescente no canal, horários empatados não causam problema.
 - **Nível normalizado** a partir do valor numérico do evento [16] [17]: 1 Critical, 2 Error, 3 Warning, 4 Information, 5 Verbose. O nível 0 (*LogAlways*) aparece como "Informações" no Visualizador de Eventos e também vira Information.
-- **Privacidade:** são exportados apenas horário (UTC), canal, provedor, ID do evento, `RecordId`, nível e um identificador aleatório da instalação. A mensagem do evento, usuário, nome do computador e dados internos do evento **não** são exportados. A pasta `runtime/` fica fora do Git.
+- **Privacidade:** o coletor exporta horário (UTC), canal, provedor, ID do evento, `RecordId`, nível e um identificador aleatório da instalação. Mensagem, usuário, nome do computador e dados internos ficam de fora. Horário e provedor podem revelar contexto. A pasta `runtime/` fica fora do Git.
 - **Sem duplicação:** cada evento recebe um ID estável (`Application-<RecordId>-<horário>`). Se o coletor ou o Logstash relerem eventos, o Elasticsearch apenas sobrescreve o mesmo documento.
 - **Transparência:** se o log for limpo, ou se eventos forem descartados pelo log circular do Windows antes da coleta, o coletor registra um aviso em `runtime/state/coletor.log`.
 - **Não é instantâneo:** um evento novo aparece no Kibana depois do intervalo de leitura (até 15 s) mais o tempo de leitura do Logstash.
@@ -116,7 +116,7 @@ Um dashboard combina várias visualizações numa única visão interativa [7]. 
 
 ## 12. Vantagens
 
-- **Exploração sem código:** pesquisar, filtrar e criar gráficos pela interface.
+- **Visualização sem programação:** crie gráficos pela interface do Kibana. A coleta e a ingestão usam scripts e configurações.
 - **Integração nativa:** as buscas e agregações são executadas pelo Elasticsearch.
 - **Ingestão flexível:** o Logstash combina entradas, filtros e saídas por configuração [9].
 - **Interatividade:** filtro de tempo global e filtros por clique em todos os painéis.
@@ -125,7 +125,7 @@ Um dashboard combina várias visualizações numa única visão interativa [7]. 
 
 ## 13. Limitações
 
-- **Mais componentes, mais memória:** são três serviços. Elasticsearch e Kibana já ocuparam cerca de 2,5 GB nos testes anteriores, e o Logstash acrescenta outra JVM (consumo ainda não medido neste projeto).
+- **Memória:** são três serviços. A demonstração usa heaps de 512 MB no Elasticsearch e 256 MB no Logstash. O consumo total varia com a inicialização e as consultas, e pode ser conferido com `docker stats --no-stream`.
 - **Coleta periódica:** os eventos chegam em ciclos de 15 s, não no instante em que acontecem.
 - **Escopo restrito por escolha:** só o canal Aplicativo e só metadados; sem mensagens, por privacidade.
 - **Segurança exige configuração:** desativar a segurança "não é recomendado" [22]; aqui ela foi desligada apenas para simplificar a demonstração local.

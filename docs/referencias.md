@@ -71,4 +71,4 @@ Fontes consultadas para o conteúdo, o ambiente e a demonstração: documentaç�
 ## Observações
 
 - As páginas da Elastic não informam data de publicação; por isso foi usada a data provável [2026], correspondente à versão 9.5 documentada. As páginas da Microsoft indicam atualização em 2026.
-- Os nomes de botões do Kibana citados nos roteiros foram conferidos no Kibana 9.5.5 nos testes da versão anterior desta demonstração, e os comandos do coletor, no Windows PowerShell 5.1. O fluxo completo com o Logstash, incluindo a importação do dashboard, ainda precisa ser executado no computador da apresentação (ver [roteiro_demonstracao.md](roteiro_demonstracao.md), seção 1).
+- Os roteiros usam os nomes em inglês do Kibana 9.5.5 e comandos do Windows PowerShell 5.1. Consulte o [roteiro da demonstração](roteiro_demonstracao.md) para conferir o ambiente em outro computador.

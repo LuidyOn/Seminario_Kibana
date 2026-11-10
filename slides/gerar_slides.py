@@ -1,11 +1,10 @@
 """Gera a apresentação editável slides/seminario_kibana.pptx.
 
-Requisito: Python 3 com python-pptx (pip install python-pptx).
-Uso, a partir da raiz do repositório:  python slides/gerar_slides.py
+Requisito: Python 3 com python-pptx (py -3 -m pip install python-pptx).
+Uso, a partir da raiz do repositório:  py -3 slides/gerar_slides.py
 
-Todos os elementos são nativos do PowerPoint (caixas de texto, formas e conectores);
-não há imagens. Os exemplos de eventos nos slides são ilustrativos: nenhum dado real
-do computador é incluído na apresentação.
+Texto, formas e diagramas são editáveis. As capturas em slides/assets/ são opcionais.
+Os trechos de JSON são ilustrativos.
 """
 from datetime import datetime
 from pathlib import Path
@@ -13,7 +12,6 @@ from pathlib import Path
 from lxml import etree
 from pptx import Presentation
 from pptx.dml.color import RGBColor
-from pptx.enum.dml import MSO_LINE_DASH_STYLE
 from pptx.enum.lang import MSO_LANGUAGE_ID
 from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
@@ -23,6 +21,7 @@ from pptx.util import Inches, Pt
 
 PASTA = Path(__file__).resolve().parent
 SAIDA = PASTA / "seminario_kibana.pptx"
+CAPTURAS = PASTA / "assets"
 
 # Paleta (as cores dos níveis seguem o dashboard: Error em vermelho)
 NAVY, TEAL, RED, SLATE = "1B2A41", "0E7C86", "E34948", "4A6178"
@@ -35,6 +34,28 @@ TEMA_CORES = {
     "dk1": TEXT, "lt1": WHITE, "dk2": NAVY, "lt2": LIGHT,
     "accent1": TEAL, "accent2": RED, "accent3": "2A78D6", "accent4": "EDA100",
     "accent5": "4A3AA7", "accent6": MUTED, "hlink": TEAL, "folHlink": "4A3AA7",
+}
+
+
+FONTES = {
+    1: "https://www.elastic.co/docs/get-started/the-stack",
+    2: "https://www.elastic.co/docs/manage-data/data-store/index-basics",
+    3: "https://www.elastic.co/docs/explore-analyze/find-and-organize/data-views",
+    4: "https://www.elastic.co/docs/explore-analyze/discover",
+    5: "https://www.elastic.co/docs/explore-analyze/query-filter/languages/kql",
+    6: "https://www.elastic.co/docs/explore-analyze/visualize/lens",
+    7: "https://www.elastic.co/docs/explore-analyze/dashboards",
+    9: "https://www.elastic.co/docs/reference/logstash/how-logstash-works",
+    10: "https://www.elastic.co/docs/reference/logstash/plugins/plugins-inputs-file",
+    11: "https://www.elastic.co/docs/reference/logstash/plugins/plugins-codecs-json_lines",
+    12: "https://www.elastic.co/docs/reference/logstash/plugins/plugins-outputs-elasticsearch",
+    13: "https://www.elastic.co/docs/reference/logstash/docker-config",
+    15: "https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.diagnostics/get-winevent",
+    20: "https://www.elastic.co/docs/deploy-manage/deploy/self-managed/install-kibana-with-docker",
+    22: "https://www.elastic.co/docs/reference/elasticsearch/configuration-reference/security-settings",
+    26: "https://www.elastic.co/subscriptions",
+    27: "https://www.elastic.co/docs/solutions/observability/logs",
+    28: "https://www.elastic.co/docs/solutions/security",
 }
 
 
@@ -54,7 +75,9 @@ def P(*trechos, **opcoes):
     return {"runs": [t if isinstance(t, tuple) else R(t) for t in trechos], **opcoes}
 
 
-def estilizar(run, size=None, bold=None, italic=None, color=None, font=None):
+def estilizar(run, size=None, bold=None, italic=None, color=None, font=None, link=None):
+    if link:
+        run.hyperlink.address = link
     f = run.font
     if size:
         f.size = Pt(size)
@@ -101,19 +124,21 @@ def preencher(tf, paragrafos, size=16, color=TEXT, bold=False, font=None, align=
             estilizar(run, size=est.get("size", par.get("size", size)),
                       bold=est.get("bold", par.get("bold", bold)), italic=est.get("italic"),
                       color=est.get("color", par.get("color", color)),
-                      font=est.get("font", par.get("font", font)))
+                      font=est.get("font", par.get("font", font)), link=est.get("link"))
 
 
 def texto(slide, x, y, w, h, paragrafos, nome=None, **kw):
+    if isinstance(paragrafos, str):
+        paragrafos = paragrafos.splitlines()
     caixa_txt = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
-    preencher(caixa_txt.text_frame, paragrafos, **kw)
+    preencher(caixa_txt.text_frame, paragrafos, margens=(0, 0, 0, 0), **kw)
     if nome:
         caixa_txt.name = nome
     return caixa_txt
 
 
 def forma(slide, x, y, w, h, fill=LIGHT, line=None, line_w=1.0, raio=0.06, tipo=MSO_SHAPE.ROUNDED_RECTANGLE,
-          dash=None, nome=None, paragrafos=None, **kw):
+          nome=None, paragrafos=None, **kw):
     s = slide.shapes.add_shape(tipo, Inches(x), Inches(y), Inches(w), Inches(h))
     if tipo == MSO_SHAPE.ROUNDED_RECTANGLE:
         s.adjustments[0] = raio
@@ -125,8 +150,6 @@ def forma(slide, x, y, w, h, fill=LIGHT, line=None, line_w=1.0, raio=0.06, tipo=
     if line:
         s.line.color.rgb = rgb(line)
         s.line.width = Pt(line_w)
-        if dash:
-            s.line.dash_style = dash
     else:
         s.line.fill.background()
     s.shadow.inherit = False
@@ -137,22 +160,23 @@ def forma(slide, x, y, w, h, fill=LIGHT, line=None, line_w=1.0, raio=0.06, tipo=
     return s
 
 
-def seta(slide, x1, y1, x2, y2, cor=MUTED, largura=1.75, de=None, para=None, dupla=False, nome=None,
-         tipo=MSO_CONNECTOR.STRAIGHT):
-    c = slide.shapes.add_connector(tipo, Inches(x1), Inches(y1), Inches(x2), Inches(y2))
-    if de:
-        c.begin_connect(*de)
-    if para:
-        c.end_connect(*para)
+def faixa(slide, x, y, w, h, cor):
+    return forma(slide, x, y, w, h, fill=cor, tipo=MSO_SHAPE.RECTANGLE)
+
+
+def fundo_escuro(slide):
+    slide.background.fill.solid()
+    slide.background.fill.fore_color.rgb = rgb(NAVY)
+
+
+def seta(slide, x1, y1, x2, y2, cor=MUTED, largura=1.75):
+    c = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, Inches(x1), Inches(y1), Inches(x2), Inches(y2))
     c.line.color.rgb = rgb(cor)
     c.line.width = Pt(largura)
     ln = c.line._get_or_add_ln()
-    for ponta in (["a:headEnd"] if dupla else []) + ["a:tailEnd"]:
-        elemento = etree.SubElement(ln, qn(ponta))
-        for atributo, valor in (("type", "triangle"), ("w", "med"), ("len", "med")):
-            elemento.set(atributo, valor)
-    if nome:
-        c.name = nome
+    ponta = etree.SubElement(ln, qn("a:tailEnd"))
+    for atributo, valor in (("type", "triangle"), ("w", "med"), ("len", "med")):
+        ponta.set(atributo, valor)
     return c
 
 
@@ -162,36 +186,32 @@ def codigo(slide, x, y, w, h, linhas, size=13, nome=None):
                  color=CODE_TXT, font=CODE, after=0, margens=(0.25, 0.18, 0.2, 0.18))
 
 
-def titulo(slide, texto_titulo, cor=NAVY, size=36):
+def titulo(slide, texto_titulo, cor=NAVY, size=40):
     t = slide.shapes.title
-    t.left, t.top, t.width, t.height = Inches(0.6), Inches(0.4), Inches(12.13), Inches(0.95)
+    t.left, t.top, t.width, t.height = Inches(0.72), Inches(0.44), Inches(11.89), Inches(0.87)
     preencher(t.text_frame, [P(R(texto_titulo, bold=True))], size=size, color=cor,
               anchor=MSO_ANCHOR.MIDDLE, margens=(0, 0, 0, 0), after=0)
+    return t
 
 
-def notas(slide, texto_notas):
-    slide.notes_slide.notes_text_frame.text = texto_notas
+def notas(slide, fala, refs=()):
+    if refs:
+        fontes = "\n".join(f"[{numero}] {FONTES[numero]}" for numero in refs)
+        fala += f"\n\nFontes:\n{fontes}"
+    slide.notes_slide.notes_text_frame.text = fala
 
 
-def cartoes_numerados(s, itens, y, h, tamanho_desc=16):
-    """Cartões lado a lado (número, título, descrição, exemplo da demo) ligados por setas."""
-    n = len(itens)
-    gap = 0.38
-    w = (12.13 - gap * (n - 1)) / n
-    formas = []
-    for i, (num, nome, desc, exemplo) in enumerate(itens):
-        x = 0.6 + i * (w + gap)
-        pars = [P(R(num, bold=True, size=28, color=TEAL), after=2),
-                P(R(nome, bold=True, size=21, color=NAVY), after=8),
-                P(desc, after=12)]
-        if exemplo:
-            pars += [P(R("Na demo", bold=True, size=12, color=MUTED), after=2),
-                     P(R(exemplo, font=CODE, size=12, color=TEAL))]
-        formas.append(forma(s, x, y, w, h, fill=LIGHT, nome=nome, paragrafos=pars, size=tamanho_desc,
-                            margens=(0.25, 0.2, 0.2, 0.15)))
-    for a, b in zip(formas, formas[1:]):
-        seta(s, 0, 0, 1, 1, cor=MUTED, largura=1.5, de=(a, 3), para=(b, 1))
-    return formas
+def captura(slide, nome, x, y, w, h):
+    caminho = CAPTURAS / nome
+    if not caminho.is_file():
+        return False
+    figura = slide.shapes.add_picture(str(caminho), Inches(x), Inches(y))
+    fator = min(Inches(w) / figura.width, Inches(h) / figura.height)
+    figura.width, figura.height = round(figura.width * fator), round(figura.height * fator)
+    figura.left = Inches(x) + (Inches(w) - figura.width) // 2
+    figura.top = Inches(y) + (Inches(h) - figura.height) // 2
+    figura.name = caminho.stem
+    return True
 
 
 # ---------- tema e layouts ----------
@@ -237,375 +257,455 @@ def ajustar_layouts(prs, fator):
 
 def slide_capa(prs, layout):
     s = prs.slides.add_slide(layout)
-    s.background.fill.solid()
-    s.background.fill.fore_color.rgb = rgb(NAVY)
-    t = s.shapes.title
-    t.left, t.top, t.width, t.height = Inches(0.9), Inches(1.9), Inches(11.5), Inches(1.3)
-    preencher(t.text_frame, [P(R("Kibana", bold=True))], size=66, color=WHITE,
-              anchor=MSO_ANCHOR.BOTTOM, margens=(0, 0, 0, 0), after=0)
-    texto(s, 0.9, 3.3, 11.6, 0.8, [P("Explorando eventos reais do Windows com Logstash e Elasticsearch")],
-          size=26, color=ON_DARK, margens=(0, 0, 0, 0), nome="Subtítulo")
-    texto(s, 0.9, 5.2, 11.5, 1.4, [
-        P(R("Seminário técnico · Avaliação de Produto 2", bold=True), color=WHITE),
-        P("Projeto de Desenvolvimento de Dashboard Analítico"),
-        P("UniSales · 2026"),
-    ], size=18, color=ON_DARK, margens=(0, 0, 0, 0), after=4, nome="Identificação acadêmica")
-    notas(s, "Apresentar o tema e o grupo. Mensagem: vamos transformar eventos reais do Windows em respostas "
+    fundo_escuro(s)
+    texto(s, 0.76, 0.95, 7.0, 0.34, "SEMINÁRIO TÉCNICO", size=17, bold=True, color=CODE_TYPE)
+    t = titulo(s, "Kibana na prática", cor=WHITE, size=60)
+    t.left, t.top, t.width, t.height = Inches(0.72), Inches(1.48), Inches(7.65), Inches(1.13)
+    texto(s, 0.76, 2.83, 7.5, 1.27, [
+        P(R("Eventos reais do Windows", size=30, bold=True), after=5),
+        P("com Logstash e Elasticsearch"),
+    ], size=24, color=ON_DARK)
+    texto(s, 0.76, 5.08, 7.7, 1.72, [
+        P(R("Avaliação de Produto 2", color=WHITE, bold=True), after=5),
+        P("Projeto de Desenvolvimento de Dashboard Analítico", after=5),
+        P("UniSales · 2026", after=5),
+        P("Integrantes: nomes a preencher"),
+    ], size=17, color=ON_DARK, nome="Identificação acadêmica")
+
+    faixa(s, 8.53, 1.64, 0.04, 4.37, SLATE)
+    for i, (etapa, nome) in enumerate((
+        ("CANAL DE ORIGEM", "Application"),
+        ("ÍNDICE", "windows-events"),
+        ("DASHBOARD", "Eventos do Windows"),
+    )):
+        y = 1.82 + i * 1.42
+        texto(s, 8.93, y, 3.66, 0.28, etapa, size=13, bold=True, color=CODE_TYPE)
+        texto(s, 8.93, y + 0.34, 3.75, 0.48, nome, size=23, bold=True, color=WHITE)
+        if i < 2:
+            seta(s, 9.04, y + 0.91, 9.04, y + 1.26, cor=CODE_TYPE, largura=1.5)
+    notas(s, "Apresentar o tema e o grupo. Vamos transformar eventos reais do Windows em respostas "
              "visuais com Logstash, Elasticsearch e Kibana.")
 
 
 def slide_problema(prs, layout):
     s = prs.slides.add_slide(layout)
-    titulo(s, "O problema: eventos demais para olhar um a um")
-    forma(s, 0.6, 1.6, 6.5, 2.45, fill=LIGHT, nome="Visualizador de Eventos", paragrafos=[
-        P(R("Visualizador de Eventos do Windows", bold=True, size=21, color=NAVY), after=10),
-        P("Cada evento traz nível, data e hora, provedor (fonte) e ID", bullet=True),
-        P("Canais separados: Aplicativo, Sistema, Segurança", bullet=True),
-        P("A leitura é evento a evento, sem visão de conjunto", bullet=True),
-    ], size=17, margens=(0.3, 0.25, 0.25, 0.15), after=8)
-    forma(s, 0.6, 4.3, 6.5, 1.59, fill=TEAL_TINT, nome="Escala", paragrafos=[
-        P(R("≈ 440 eventos em 24 h", bold=True, size=30, color=TEAL), after=2),
-        P("só no canal Aplicativo do computador de testes (medido em 29/10/2026)"),
-    ], size=14, color=TEXT, anchor=MSO_ANCHOR.MIDDLE, margens=(0.3, 0.05, 0.25, 0.05))
-    perguntas = ["Quantos erros e avisos aconteceram?", "Quais aplicativos mais registram eventos?",
-                 "Quando os problemas se concentram?", "Chegou algum evento novo agora?"]
+    titulo(s, "Análise de eventos do Windows")
+    texto(s, 0.72, 1.58, 7.0, 0.42, "Visualizador de Eventos · Canal Aplicativo",
+          size=20, bold=True, color=NAVY)
+    tem_captura = captura(s, "visualizador-eventos.png", 0.72, 2.12, 7.03, 3.91)
+    if not tem_captura:
+        faixa(s, 0.72, 2.17, 7.03, 3.37, LIGHT)
+        texto(s, 1.04, 2.48, 6.4, 0.45, "Campos de um evento", size=23, bold=True, color=NAVY)
+        texto(s, 1.04, 3.12, 6.2, 1.74, [
+            P("Nível e horário", after=12),
+            P("Provedor de origem", after=12),
+            P("ID do evento"),
+        ], size=21, color=TEXT)
+    texto(s, 0.72, 6.14, 7.03, 0.65, "O Visualizador lista os registros um a um.", size=19, color=MUTED)
+
+    faixa(s, 8.05, 1.60, 0.04, 5.04, BORDER)
+    texto(s, 8.39, 1.58, 4.26, 1.00, "≈ 440", size=59, bold=True, color=TEAL)
+    texto(s, 8.44, 2.59, 4.17, 0.81, "eventos em 24 h no PC de teste\nCanal Aplicativo, 29/10/2026",
+          size=17, color=MUTED)
+    perguntas = ("Quantos erros se repetem?", "Quais aplicativos os registram?",
+                 "Em que horário os erros se concentram?")
     for i, pergunta in enumerate(perguntas):
-        forma(s, 7.45, 1.6 + i * 1.12, 5.28, 0.93, fill=LIGHT, nome=f"Pergunta {i + 1}",
-              paragrafos=[P(R("?  ", bold=True, color=RED, size=22), R(pergunta))],
-              size=18, color=NAVY, anchor=MSO_ANCHOR.MIDDLE, margens=(0.25, 0.05, 0.2, 0.05), after=0)
-    forma(s, 0.6, 6.3, 12.13, 0.7, fill=TEAL_TINT, nome="Necessidade",
-          paragrafos=[P(R("É preciso ", color=TEXT), R("coletar", bold=True), R(", "), R("guardar", bold=True),
-                        R(" de forma pesquisável e "), R("visualizar", bold=True), R(" os eventos."))],
-          size=18, color=NAVY, anchor=MSO_ANCHOR.MIDDLE, margens=(0.25, 0.05, 0.25, 0.05), after=0)
-    notas(s, "O Windows registra eventos o tempo todo; no computador de testes, cerca de 440 por dia só no canal "
-             "Aplicativo. No Visualizador de Eventos a leitura é evento a evento: quantos erros, de quais "
-             "aplicativos, quando? Transição: precisamos coletar, guardar e visualizar.")
+        y = 3.61 + i * 0.94
+        faixa(s, 8.44, y + 0.06, 0.055, 0.30, RED)
+        texto(s, 8.64, y, 4.02, 0.78, pergunta, size=22, bold=True, color=NAVY)
+    fala = ("O Windows registra eventos o tempo todo. No computador de testes, foram cerca de 440 em 24 horas "
+            "só no canal Aplicativo, em 29/10/2026. No Visualizador de Eventos, a leitura é evento a evento. "
+            "Pergunte quantos erros ocorreram, de quais aplicativos, em que horário e se chegou algum evento novo. "
+            "Para responder, precisamos coletar, guardar e visualizar os dados.")
+    if tem_captura:
+        fala += "\n\nImagem: Visualizador de Eventos do Windows, canal Aplicativo."
+    notas(s, fala)
 
 
 def slide_o_que_e(prs, layout):
     s = prs.slides.add_slide(layout)
     titulo(s, "O que é o Kibana")
-    texto(s, 0.6, 1.45, 12.13, 0.95, [P(
-        R("Interface web da Elastic Stack para "), R("explorar, visualizar e analisar", bold=True),
-        R(" os dados armazenados no Elasticsearch. "), R("[1]", color=MUTED, size=14))],
-        size=21, color=TEXT, margens=(0, 0, 0, 0))
-    forma(s, 0.6, 2.6, 4.9, 3.25, fill=LIGHT, nome="Elasticsearch", paragrafos=[
-        P(R("Elasticsearch", bold=True, size=26, color=NAVY), after=12),
-        P("Guarda dados como documentos JSON", bullet=True),
-        P("Indexa, pesquisa e agrega", bullet=True),
-        P("Acesso por API REST · porta 9200", bullet=True),
-    ], size=17, margens=(0.3, 0.25, 0.25, 0.2), after=8)
-    forma(s, 7.83, 2.6, 4.9, 3.25, fill=LIGHT, nome="Kibana", paragrafos=[
-        P(R("Kibana", bold=True, size=26, color=TEAL), after=12),
-        P("Interface no navegador · porta 5601", bullet=True),
-        P("Discover, Lens e Dashboards", bullet=True),
-        P("Não guarda os dados analisados: cada gráfico é uma consulta", bullet=True),
-    ], size=17, margens=(0.3, 0.25, 0.25, 0.2), after=8)
-    seta(s, 7.7, 3.65, 5.63, 3.65, cor=TEAL, nome="Seta consultas")
-    texto(s, 5.55, 3.1, 2.25, 0.45, [P("consultas", align=PP_ALIGN.CENTER)], size=14, color=MUTED,
-          margens=(0, 0, 0, 0))
-    seta(s, 5.63, 4.85, 7.7, 4.85, cor=NAVY, nome="Seta resultados")
-    texto(s, 5.55, 4.95, 2.25, 0.45, [P("resultados", align=PP_ALIGN.CENTER)], size=14, color=MUTED,
-          margens=(0, 0, 0, 0))
-    forma(s, 0.6, 6.15, 12.13, 0.75, fill=TEAL_TINT, nome="Versões", paragrafos=[P(
-        R("Mesma versão em toda a stack [1]: ", bold=True),
-        R("na demonstração, Elasticsearch, Logstash e Kibana 9.5.5"))],
-        size=17, color=NAVY, anchor=MSO_ANCHOR.MIDDLE, margens=(0.25, 0.05, 0.25, 0.05), after=0)
-    notas(s, "O Elasticsearch armazena e pesquisa; o Kibana é a interface web que consulta o Elasticsearch e "
-             "mostra o resultado. O Kibana não guarda os dados analisados. Toda a stack precisa estar na mesma "
-             "versão: 9.5.5 na demonstração.")
+    texto(s, 0.72, 1.45, 11.89, 0.67,
+          "A interface web da Elastic Stack consulta e apresenta os dados do Elasticsearch. [1]", size=22)
+    faixa(s, 0.72, 2.43, 11.89, 0.035, BORDER)
+    forma(s, 0.76, 2.85, 0.66, 0.57, fill=TEAL_TINT, line=TEAL, tipo=MSO_SHAPE.CAN,
+          nome="Símbolo de armazenamento")
+    forma(s, 8.53, 2.87, 0.69, 0.49, fill=None, line=TEAL, tipo=MSO_SHAPE.RECTANGLE,
+          nome="Símbolo de navegador")
+    faixa(s, 8.53, 2.99, 0.69, 0.035, TEAL)
+    texto(s, 0.72, 3.68, 4.2, 0.54, "Elasticsearch", size=31, bold=True, color=NAVY)
+    texto(s, 0.72, 4.36, 4.18, 1.36, [
+        P("Armazena documentos JSON.", after=8),
+        P("Indexa, pesquisa e agrega.", after=8),
+        P(R("API REST · porta 9200", color=MUTED, size=16)),
+    ], size=19)
+    texto(s, 8.53, 3.68, 4.08, 0.54, "Kibana", size=31, bold=True, color=TEAL)
+    texto(s, 8.53, 4.36, 4.08, 1.36, [
+        P("Envia consultas ao Elasticsearch.", after=8),
+        P("Exibe os resultados.", after=8),
+        P(R("Navegador · porta 5601", color=MUTED, size=16)),
+    ], size=19)
+    for y, legenda, origem, destino, cor in (
+        (3.94, "Consultas", 8.13, 5.02, TEAL),
+        (4.87, "Resultados", 5.02, 8.13, NAVY),
+    ):
+        texto(s, 5.02, y - 0.35, 3.11, 0.29, legenda, size=16, color=MUTED, align=PP_ALIGN.CENTER)
+        seta(s, origem, y, destino, y, cor=cor, largura=2)
+    faixa(s, 0.72, 6.17, 11.89, 0.64, TEAL_TINT)
+    texto(s, 0.91, 6.30, 11.48, 0.37,
+          "Elasticsearch, Logstash e Kibana usam a versão 9.5.5 na demonstração.", size=17, bold=True, color=NAVY)
+    notas(s, "O Elasticsearch armazena e pesquisa. O Kibana consulta o Elasticsearch e mostra o resultado. "
+             "A mesma versão nos três componentes facilita a compatibilidade. A demonstração usa 9.5.5.", refs=(1, 20))
 
 
 def slide_dados(prs, layout):
     s = prs.slides.add_slide(layout)
-    titulo(s, "Como os eventos ficam no Elasticsearch")
-    texto(s, 0.6, 1.45, 6.7, 0.35, [P(R("Uma linha do arquivo eventos.jsonl…", bold=True))], size=15,
-          color=MUTED, margens=(0, 0, 0, 0))
-    codigo(s, 0.6, 1.85, 6.7, 0.62, ['{"@timestamp":"2026-10-29T14:05:12.000Z","log":{…},…}'], size=12.5,
-           nome="Linha JSON")
-    seta(s, 1.4, 2.52, 1.4, 3.07, cor=TEAL, nome="Seta Logstash")
-    texto(s, 1.6, 2.6, 5.6, 0.4, [P("Logstash (codec json)")], size=14, color=MUTED, margens=(0, 0, 0, 0))
-    texto(s, 0.6, 3.12, 6.7, 0.35, [P(R("…vira um documento no índice windows-events", bold=True))], size=15,
-          color=MUTED, margens=(0, 0, 0, 0))
-    largura = 45
-    campos = [
-        ('  "@timestamp": "2026-10-29T14:05:12.000Z",', "date"),
-        ('  "log.level": "Error",', "keyword"),
-        ('  "event.provider": "Application Error",', "keyword"),
-        ('  "event.code": "1000",', "keyword"),
-        ('  "winlog.channel": "Application",', "keyword"),
-        ('  "winlog.record_id": 50123', "long"),
-    ]
-    linhas = ["{"] + [[R(c.ljust(largura)), R(tipo, color=CODE_TYPE, italic=True)] for c, tipo in campos] + ["}"]
-    codigo(s, 0.6, 3.5, 6.7, 2.3, linhas, size=13.5, nome="Documento JSON")
-    texto(s, 0.6, 5.9, 6.7, 0.75, [P("Exemplo ilustrativo. Em azul-claro: o tipo de cada campo, definido pelo template "
-                                     "que o Logstash instala no Elasticsearch.")], size=12, color=MUTED,
-          margens=(0, 0, 0, 0))
-    cartoes = [
-        ("Índice", "Conjunto de documentos; unidade de armazenamento do Elasticsearch [2]", "windows-events"),
-        ("Documento", "Um evento do Windows, em JSON", "1 linha do arquivo = 1 documento"),
-        ("Campo", "Par chave-valor com tipo definido no mapping [2]", "date · keyword · long"),
-    ]
-    for i, (nome, definicao, exemplo) in enumerate(cartoes):
-        forma(s, 7.75, 1.45 + i * 1.85, 4.98, 1.65, fill=LIGHT, nome=nome, paragrafos=[
-            P(R(nome, bold=True, size=21, color=NAVY), after=4),
-            P(definicao, after=6),
-            P(R(exemplo, font=CODE, color=TEAL, size=13)),
-        ], size=15, margens=(0.25, 0.15, 0.2, 0.1))
-    notas(s, "Cada linha do arquivo gerado pelo coletor é um objeto JSON; o Logstash a transforma num documento do "
-             "índice windows-events. Índice é o conjunto, documento é um evento, campo é cada atributo com seu tipo. "
-             "keyword serve para agrupar e filtrar; date, para a linha do tempo. O exemplo é ilustrativo.")
+    titulo(s, "Documentos e índices")
+    texto(s, 0.72, 1.52, 7.01, 0.36, "Uma linha em eventos.jsonl", size=18, bold=True, color=NAVY)
+    codigo(s, 0.72, 1.96, 7.02, 0.65,
+           ['{"@timestamp":"2026-10-29T14:05:12Z","log":{…}}'], size=15, nome="Trecho ilustrativo do JSONL")
+    seta(s, 1.08, 2.72, 1.08, 3.22, cor=TEAL, largura=2)
+    texto(s, 1.34, 2.83, 6.2, 0.33, "O Logstash lê a linha com o codec json.", size=16, color=MUTED)
+    texto(s, 0.72, 3.42, 7.02, 0.38, "Documento indexado", size=18, bold=True, color=NAVY)
+    codigo(s, 0.72, 3.87, 7.02, 1.82, [
+        "{",
+        '  "@timestamp": "2026-10-29T14:05:12.000Z",',
+        '  "log": {"level": "Error"},',
+        '  "winlog": {"record_id": 50123}',
+        "}",
+    ], size=15, nome="Exemplo ilustrativo de documento")
+    texto(s, 0.72, 5.83, 7.02, 0.32, "Exemplos ilustrativos do formato.", size=15, color=MUTED)
+    faixa(s, 8.04, 1.51, 0.035, 4.56, BORDER)
+    texto(s, 8.40, 1.56, 4.21, 0.47, "Índice", size=24, bold=True, color=TEAL)
+    texto(s, 8.40, 2.04, 4.21, 0.63, [P(R("windows-events", font=CODE, size=16)), P("Conjunto de documentos")],
+          size=17, color=NAVY)
+    texto(s, 8.40, 2.91, 4.21, 0.47, "Documento", size=24, bold=True, color=TEAL)
+    texto(s, 8.40, 3.39, 4.21, 0.34, "Um evento representado em JSON", size=17)
+    texto(s, 8.40, 4.11, 4.21, 0.47, "Campos", size=24, bold=True, color=TEAL)
+    for i, (nome, tipo) in enumerate((("@timestamp", "date"), ("log.level", "keyword"), ("winlog.record_id", "long"))):
+        y = 4.65 + i * 0.39
+        texto(s, 8.40, y, 2.60, 0.35, nome, size=16, font=CODE)
+        texto(s, 11.10, y, 1.51, 0.35, tipo, size=16, font=CODE, bold=True, color=TEAL)
+    faixa(s, 0.72, 6.38, 11.89, 0.035, BORDER)
+    texto(s, 0.72, 6.54, 11.89, 0.35, "Em uma releitura, o mesmo ID atualiza o documento do evento.",
+          size=18, bold=True, color=NAVY)
+    notas(s, "Cada linha é um objeto JSON. O Logstash lê a linha e envia um documento ao índice windows-events. "
+             "O índice reúne documentos. O documento representa um evento. Cada campo tem um tipo definido no "
+             "mapeamento. keyword serve para agrupar e filtrar por valor exato, date para a linha do tempo e long "
+             "para números inteiros como o RecordId. O exemplo mostra parte do documento. O ID estável mantém um "
+             "documento por evento mesmo se o arquivo for relido.", refs=(2, 12))
 
 
 def slide_ferramentas(prs, layout):
     s = prs.slides.add_slide(layout)
-    titulo(s, "As ferramentas do Kibana")
-    cartoes_numerados(s, [
-        ("1", "Data View", "Aponta para o índice e define o campo de tempo [3]", "windows-events + @timestamp"),
-        ("2", "Discover", "Explora os documentos com busca e filtros [4]", 'log.level : "Error"'),
-        ("3", "Lens", "Cria gráficos arrastando campos e sugere o tipo de gráfico [6]", "IDs de evento mais frequentes"),
-        ("4", "Dashboard", "Reúne visualizações; tempo e filtros valem para todas [7]", "Eventos do Windows"),
-    ], y=1.6, h=3.4)
-    forma(s, 0.6, 5.35, 12.13, 1.05, fill=TEAL_TINT, nome="KQL", paragrafos=[
-        P(R("KQL", bold=True, color=TEAL), R(" (Kibana Query Language): linguagem de texto para filtrar dados [5]"),
-          after=4),
-        P(R('log.level : "Error"', font=CODE, size=14), R("      "),
-          R('log.level : "Warning" or log.level : "Error"', font=CODE, size=14)),
-    ], size=16, color=NAVY, anchor=MSO_ANCHOR.MIDDLE, margens=(0.25, 0.08, 0.25, 0.08))
-    notas(s, "Data View diz ao Kibana qual índice usar e qual é o campo de tempo. Discover explora e filtra "
-             "documentos. Lens transforma um campo em gráfico. Dashboard reúne tudo, com tempo e filtros "
-             "compartilhados. KQL é a linguagem simples de filtro que vamos usar.")
-
-
-def slide_logstash(prs, layout):
-    s = prs.slides.add_slide(layout)
-    titulo(s, "Logstash: o pipeline de ingestão")
-    texto(s, 0.6, 1.45, 12.13, 0.8, [P(
-        R("Mecanismo de coleta de dados com pipelines em tempo real "), R("[1]", color=MUTED, size=14),
-        R(": cada evento passa por "), R("entrada → filtro → saída", bold=True), R(" "), R("[9]", color=MUTED, size=14))],
-        size=20, color=TEXT, margens=(0, 0, 0, 0))
-    cartoes_numerados(s, [
-        ("1", "Entrada: file", "Lê cada linha nova de eventos.jsonl; o sincedb guarda a posição de leitura [10]",
-         "codec => json"),
-        ("2", "Filtro: mutate", "Remove campos técnicos acrescentados pelo próprio Logstash",
-         "remove_field => [...]"),
-        ("3", "Saída: elasticsearch", "Grava no índice; o ID do evento evita documentos duplicados [12]",
-         'index => "windows-events"'),
-    ], y=2.45, h=3.0)
-    forma(s, 0.6, 5.8, 12.13, 0.95, fill=TEAL_TINT, nome="Configuração", paragrafos=[P(
-        R("Toda a configuração cabe em um arquivo: ", bold=True),
-        R("logstash/pipeline/windows-events.conf", font=CODE, size=15),
-        R(" (versionado no repositório)"))],
-        size=17, color=NAVY, anchor=MSO_ANCHOR.MIDDLE, margens=(0.25, 0.05, 0.25, 0.05), after=0)
-    notas(s, "O Logstash organiza a ingestão em três estágios. Entrada file: acompanha o arquivo do coletor e guarda a "
-             "posição no sincedb; o codec json transforma cada linha em evento. Filtro mutate: limpa campos técnicos. "
-             "Saída elasticsearch: grava no índice windows-events usando o ID do evento, o que evita duplicatas.")
+    titulo(s, "Ferramentas do Kibana")
+    ferramentas = (
+        ("▤", "Data View", "Indica o índice e o campo de tempo."),
+        ("⌕", "Discover", "Explora e filtra os documentos."),
+        ("▥", "Lens", "Sugere um gráfico a partir dos campos."),
+        ("▦", "Dashboard", "Reúne gráficos com filtros em comum."),
+    )
+    for i, (icone, nome, funcao) in enumerate(ferramentas):
+        y = 1.64 + i * 1.22
+        faixa(s, 0.72, y + 1.02, 4.98, 0.025, BORDER)
+        texto(s, 0.72, y + 0.05, 0.50, 0.43, icone, font="Segoe UI Symbol", size=23, color=TEAL)
+        texto(s, 1.32, y, 4.4, 0.43, nome, size=23, bold=True, color=NAVY)
+        texto(s, 1.32, y + 0.48, 4.37, 0.48, funcao, size=17)
+    tem_captura = captura(s, "discover.png", 5.99, 1.58, 6.62, 3.52)
+    if tem_captura:
+        y_kql = 5.60
+        texto(s, 5.99, 5.21, 6.62, 0.29, "Discover com o Data View Eventos do Windows", size=14, color=MUTED)
+    else:
+        y_kql = 2.72
+        texto(s, 5.99, 1.72, 6.62, 0.72, "Filtro no Discover", size=30, bold=True, color=TEAL)
+    texto(s, 5.99, y_kql + 0.13, 6.62, 0.36, "KQL · Filtro por nível", size=18, bold=True, color=NAVY)
+    codigo(s, 5.99, y_kql + 0.58, 6.62, 0.64, ['log.level : "Error"'], size=17, nome="Consulta KQL")
+    fala = ("Data View diz ao Kibana qual índice usar e qual é o campo de tempo. Discover explora e filtra "
+            "documentos. Lens transforma um campo em gráfico. Dashboard reúne as visualizações e compartilha o tempo "
+            "e os filtros. Use KQL para filtrar. Outro exemplo é log.level : \"Warning\" or log.level : \"Error\".")
+    if tem_captura:
+        fala += "\n\nImagem: Discover no Kibana, com as colunas @timestamp, log.level e event.code."
+    notas(s, fala, refs=(3, 4, 5, 6, 7))
 
 
 def slide_arquitetura(prs, layout):
     s = prs.slides.add_slide(layout)
     titulo(s, "Arquitetura da demonstração")
-    forma(s, 0.6, 1.45, 12.13, 1.9, fill=None, line=MUTED, line_w=1.25, dash=MSO_LINE_DASH_STYLE.DASH,
-          raio=0.05, nome="Windows", paragrafos=[P(R("Windows (fora do Docker)", color=MUTED))],
-          size=12, anchor=MSO_ANCHOR.BOTTOM, margens=(0.2, 0.05, 0.2, 0.06), after=0)
-    forma(s, 0.6, 3.75, 12.13, 1.9, fill=None, line=MUTED, line_w=1.25, dash=MSO_LINE_DASH_STYLE.DASH,
-          raio=0.05, nome="Docker Compose", paragrafos=[P(
-              R("Docker Compose · ambiente local · ", color=MUTED), R("iniciar_demo.ps1", font=CODE, color=MUTED))],
-          size=12, anchor=MSO_ANCHOR.BOTTOM, margens=(0.2, 0.05, 0.2, 0.06), after=0)
-    caixas = {}
-    linha1 = [("Event Log", "Windows Event Log", "canal Application", LIGHT, NAVY),
-              ("Coletor", "Coletor PowerShell", "Get-WinEvent a cada 15 s", LIGHT, NAVY),
-              ("Arquivo", "eventos.jsonl", "runtime/ (fora do Git)", LIGHT, NAVY)]
-    # Faixa de baixo da direita para a esquerda: o arquivo desce direto para o Logstash
-    linha2 = [("Kibana", "Kibana", "Dashboard · porta 5601", TEAL, WHITE),
-              ("Elasticsearch", "Elasticsearch", "índice windows-events", NAVY, WHITE),
-              ("Logstash", "Logstash", "file → elasticsearch", SLATE, WHITE)]
-    for y, linha in ((1.62, linha1), (3.92, linha2)):
-        for i, (chave, nome, detalhe, fundo, cor) in enumerate(linha):
-            caixas[chave] = forma(s, 0.85 + i * 4.11, y, 3.4, 1.12, fill=fundo,
-                                  line=BORDER if fundo == LIGHT else None, nome=nome, paragrafos=[
-                                      P(R(nome, bold=True, size=19), after=2), P(R(detalhe, size=14))],
-                                  size=15, color=cor, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
-    for a, b in (("Event Log", "Coletor"), ("Coletor", "Arquivo")):
-        seta(s, 0, 0, 1, 1, cor=TEAL, de=(caixas[a], 3), para=(caixas[b], 1))
-    seta(s, 0, 0, 1, 1, cor=TEAL, de=(caixas["Arquivo"], 2), para=(caixas["Logstash"], 0),
-         nome="Seta leitura do arquivo")
-    for a, b in (("Logstash", "Elasticsearch"), ("Elasticsearch", "Kibana")):
-        seta(s, 0, 0, 1, 1, cor=TEAL, de=(caixas[a], 1), para=(caixas[b], 3))
-    notas_arq = [
-        ("Incremental", "checkpoint pelo RecordId; novos eventos a cada 15 s"),
-        ("Sem duplicatas", "o ID estável do evento vira o ID do documento"),
-        ("Privacidade", "só metadados; os eventos não vão para o Git"),
-    ]
-    for i, (lead, desc) in enumerate(notas_arq):
-        forma(s, 0.6 + i * 4.11, 5.9, 3.91, 1.0, fill=LIGHT, nome=f"Nota {lead}", paragrafos=[
-            P(R(lead + ": ", bold=True, color=NAVY), R(desc))], size=14, anchor=MSO_ANCHOR.MIDDLE,
-              margens=(0.2, 0.05, 0.15, 0.05), after=0)
+    faixa(s, 0.62, 1.66, 6.20, 4.16, LIGHT)
+    faixa(s, 6.95, 1.66, 5.77, 4.16, TEAL_TINT)
+    texto(s, 0.80, 1.92, 5.65, 0.48, "Windows", size=23, bold=True, color=NAVY)
+    texto(s, 7.11, 1.92, 5.42, 0.48, "Docker Compose", size=23, bold=True, color=TEAL)
+
+    componentes = (
+        ("Windows\nEvent Log", "Application", 1.73, WHITE, NAVY),
+        ("PowerShell", "Get-WinEvent", 1.76, WHITE, NAVY),
+        ("JSONL", "eventos.jsonl", 1.66, WHITE, NAVY),
+        ("Logstash", "Ingestão", 1.46, SLATE, WHITE),
+        ("Elasticsearch", "windows-events", 1.98, NAVY, WHITE),
+        ("Kibana", "Painel web", 1.47, TEAL, WHITE),
+    )
+    x = 0.76
+    posicoes = []
+    for nome, detalhe, largura, fundo, cor in componentes:
+        linhas = [P(R(linha, size=18, bold=True), after=0) for linha in nome.splitlines()]
+        linhas.append(P(R(detalhe, size=13), before=5))
+        forma(s, x, 2.75, largura, 1.44, fill=fundo, tipo=MSO_SHAPE.RECTANGLE,
+              nome=nome.replace("\n", " "), paragrafos=linhas,
+              color=cor, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE, margens=(0.05, 0.04, 0.05, 0.04))
+        posicoes.append((x, largura))
+        x += largura + 0.36
+    for (origem, largura), (destino, _) in zip(posicoes, posicoes[1:]):
+        seta(s, origem + largura + 0.05, 3.47, destino - 0.05, 3.47, cor=TEAL, largura=1.7)
+    x_es, w_es = posicoes[4]
+    x_kibana, w_kibana = posicoes[5]
+    seta(s, x_kibana + w_kibana / 2, 4.81, x_es + w_es / 2, 4.81, cor=NAVY, largura=1.65)
+    texto(s, 8.76, 5.03, 3.77, 0.43, "Consulta do Kibana ao Elasticsearch", size=15,
+          color=NAVY, align=PP_ALIGN.CENTER)
+    texto(s, 0.84, 4.89, 5.71, 0.58, "Coleta a cada 15 s e retomada pelo checkpoint.", size=17, color=MUTED)
+    texto(s, 0.72, 6.17, 11.89, 0.52,
+          "O coletor roda no Windows para ler o canal Aplicativo. O Logstash acompanha o arquivo no Docker.",
+          size=18, color=TEXT)
     notas(s, "No Windows, o coletor lê o canal Application com Get-WinEvent a cada 15 segundos e grava eventos.jsonl. "
-             "No Docker, o Logstash lê esse arquivo e envia ao Elasticsearch; o Kibana consulta e mostra. O coletor "
-             "fica fora do Docker porque lê o log do próprio computador.")
+             "Ele fica fora do Docker porque lê o log do próprio computador. No Docker, o Logstash acompanha "
+             "o arquivo e envia ao Elasticsearch. O Kibana consulta o índice e mostra os resultados. "
+             "O Elasticsearch expõe a API local na porta 9200 e o Kibana fica no navegador pela porta 5601.",
+          refs=(1, 13, 15))
 
 
-def slide_demonstracao(prs, layout):
+def slide_logstash(prs, layout):
     s = prs.slides.add_slide(layout)
-    titulo(s, "Nossa demonstração: dados reais deste computador")
-    colunas = [
-        (0.6, "O que coletamos", TEAL, [
-            "Horário do evento (UTC)", "Canal Aplicativo (Application)", "Provedor (fonte) e ID do evento",
-            "RecordId, o número sequencial do evento", "Nível: Critical, Error, Warning ou Information",
-            "Identificador aleatório da instalação"]),
-        (6.78, "O que fica de fora", RED, [
-            "Mensagem do evento", "Usuário e nome do computador", "Processos e dados internos do evento",
-            "Canal de Segurança", "Envio ao Git: a pasta runtime/ é ignorada"]),
-    ]
+    titulo(s, "Pipeline do Logstash")
+    texto(s, 0.72, 1.48, 11.89, 0.53, "Ingestão contínua com coleta periódica", size=23, bold=True, color=TEAL)
+    etapas = (
+        ("01", "Entrada", "file + codec json", "Lê as linhas novas do JSONL. O sincedb guarda a posição de leitura."),
+        ("02", "Filtro", "mutate", "Remove campos técnicos que o próprio Logstash acrescenta."),
+        ("03", "Saída", "elasticsearch", "Grava no índice windows-events com o ID estável de cada evento."),
+    )
+    for i, (numero, etapa, plugin, descricao) in enumerate(etapas):
+        x = 0.72 + i * 4.16
+        texto(s, x, 2.32, 0.66, 0.40, numero, size=20, bold=True, color=TEAL)
+        texto(s, x, 2.83, 3.52, 0.60, etapa, size=32, bold=True, color=NAVY)
+        faixa(s, x, 3.58, 3.57, 0.04, BORDER)
+        texto(s, x, 3.80, 3.57, 0.38, plugin, size=17, font=CODE, bold=True, color=TEAL)
+        texto(s, x, 4.40, 3.58, 1.12, descricao, size=19)
+        if i < len(etapas) - 1:
+            seta(s, x + 3.61, 3.10, x + 4.04, 3.10, cor=TEAL, largura=1.7)
+    codigo(s, 0.72, 6.10, 11.89, 0.65, ["logstash/pipeline/windows-events.conf"], size=16,
+           nome="Arquivo de configuração")
+    notas(s, "O Logstash organiza a ingestão em três estágios. A entrada file acompanha o arquivo do coletor "
+             "e usa o sincedb para guardar a posição. O codec json transforma cada linha em evento. "
+             "O filtro mutate limpa campos técnicos. A saída elasticsearch grava no índice windows-events "
+             "com o identificador estável do evento, então releituras atualizam o mesmo documento. "
+             "A coleta no Windows ocorre a cada 15 segundos.", refs=(9, 10, 11, 12))
+
+
+def slide_privacidade(prs, layout):
+    s = prs.slides.add_slide(layout)
+    titulo(s, "Dados reais e privacidade")
+    colunas = (
+        (0.72, "Metadados coletados", TEAL, (
+            "Horário em UTC e canal Aplicativo",
+            "Provedor de origem e ID do evento",
+            "RecordId e nível do evento",
+            "Identificador aleatório da instalação",
+        )),
+        (6.94, "Fora da exportação", RED, (
+            "Mensagem completa do evento",
+            "Usuário e nome do computador",
+            "Processos e dados internos",
+            "Canal de Segurança",
+        )),
+    )
     for x, cabecalho, cor, itens in colunas:
-        pars = [P(R(cabecalho, bold=True, size=22, color=cor), after=10)]
-        pars += [P(item, bullet=True, bullet_color=cor, after=6) for item in itens]
-        forma(s, x, 1.5, 5.95, 3.55, fill=LIGHT, nome=cabecalho, paragrafos=pars, size=17,
-              margens=(0.3, 0.22, 0.3, 0.12))
-    texto(s, 0.6, 5.25, 12.13, 0.45, [P(
-        "Amostra inicial: últimos 7 dias (até 2.000 eventos) · depois, verificação a cada 15 s · "
-        "os números variam conforme o computador")], size=14, color=MUTED, margens=(0, 0, 0, 0))
-    forma(s, 0.6, 5.85, 12.13, 0.8, fill=TEAL_TINT, nome="Pergunta-guia", paragrafos=[P(
-        R("Pergunta-guia: ", bold=True), R("o que o próprio Windows registrou nesta semana?"))],
-        size=21, color=NAVY, anchor=MSO_ANCHOR.MIDDLE, margens=(0.3, 0.05, 0.3, 0.05), after=0)
-    notas(s, "Coletamos apenas metadados do canal Aplicativo; mensagem, usuário e nome do computador ficam de fora, e os "
-             "eventos não vão para o Git. Primeira leitura: últimos 7 dias; depois, a cada 15 segundos. Os números "
-             "dependem do computador. Lançar a pergunta-guia.")
+        faixa(s, x, 1.67, 5.67, 0.065, cor)
+        texto(s, x, 1.92, 5.67, 0.51, cabecalho, size=25, bold=True, color=NAVY)
+        texto(s, x, 2.65, 5.61, 2.77,
+              [P(item, bullet=True, bullet_color=cor, after=14) for item in itens], size=20)
+    faixa(s, 6.65, 1.94, 0.035, 3.30, BORDER)
+    faixa(s, 0.72, 5.55, 11.89, 1.18, LIGHT)
+    texto(s, 0.95, 5.75, 11.35, 0.73, [
+        P("Amostra inicial dos últimos 7 dias, até 2.000 eventos. Depois, verificação a cada 15 s.", after=7),
+        P(R("Horário e provedor podem revelar contexto. ", bold=True), R("A pasta runtime/ fica fora do Git.")),
+    ], size=17, color=NAVY)
+    notas(s, "Coletamos apenas os metadados selecionados do canal Aplicativo. Mensagem, usuário e nome do computador "
+             "ficam de fora, e os eventos não vão para o Git. A primeira leitura cobre até 2.000 eventos "
+             "dos últimos sete dias. A partir daí o coletor verifica a cada 15 segundos. "
+             "Os totais variam por computador. Metadados também podem revelar contexto. "
+             "Pergunta para a demonstração: o que o Windows registrou nesta semana?", refs=(15,))
 
 
 def slide_transicao(prs, layout):
     s = prs.slides.add_slide(layout)
-    s.background.fill.solid()
-    s.background.fill.fore_color.rgb = rgb(NAVY)
+    fundo_escuro(s)
     titulo(s, "Demonstração prática", cor=WHITE)
-    texto(s, 0.6, 1.4, 12.13, 0.5, [P("Ao vivo, com eventos deste computador · cerca de 5 minutos")], size=20,
-          color=ON_DARK, margens=(0, 0, 0, 0))
-    passos = [
-        ("Visualizador de Eventos", "a fonte real"), ("Coletor", "eventos.jsonl"),
-        ("Logstash", "lê e envia"), ("Elasticsearch", "guarda e pesquisa"),
-        ("Discover", "filtro KQL"), ("Lens", "novo gráfico"), ("Dashboard", "filtro por clique"),
-    ]
-    passo = 12.13 / len(passos)
-    for i, (nome, desc) in enumerate(passos):
-        cx = 0.6 + passo * i + passo / 2
-        forma(s, cx - 0.4, 2.9, 0.8, 0.8, fill=TEAL, tipo=MSO_SHAPE.OVAL, nome=f"Passo {i + 1}",
-              paragrafos=[P(R(str(i + 1), bold=True), align=PP_ALIGN.CENTER)], size=22, color=WHITE,
-              anchor=MSO_ANCHOR.MIDDLE, margens=(0, 0, 0, 0), after=0)
-        if i < len(passos) - 1:
-            seta(s, cx + 0.48, 3.3, cx + passo - 0.48, 3.3, cor=ON_DARK, largura=1.25)
-        texto(s, cx - passo / 2 + 0.04, 3.95, passo - 0.08, 1.6, [
-            P(R(nome, bold=True, size=16, color=WHITE), align=PP_ALIGN.CENTER, after=6),
-            P(desc, align=PP_ALIGN.CENTER)], size=13, color=ON_DARK, margens=(0, 0, 0, 0))
-    texto(s, 0.6, 6.3, 12.13, 0.5, [P("Roteiro detalhado e plano de contingência: docs/roteiro_demonstracao.md")],
-          size=13, color=ON_DARK, margens=(0, 0, 0, 0))
-    notas(s, "Seguir docs/roteiro_demonstracao.md, seção 3: Visualizador de Eventos, religar o coletor e mostrar os "
-             "eventos importados, pipeline do Logstash, contagem no Elasticsearch, Discover com filtro KQL, Lens pelo "
-             "campo event.code e dashboard com filtro por clique. Ao final, ligar cada passo aos conceitos.")
+    tem_captura = captura(s, "eventos-do-windows.png", 0.72, 1.52, 9.07, 4.95)
+    if tem_captura:
+        texto(s, 0.72, 6.63, 9.10, 0.31, "Captura do dashboard local. Os valores variam durante a coleta.",
+              size=15, color=ON_DARK)
+    else:
+        texto(s, 0.72, 1.72, 9.07, 0.73, "Eventos do Windows", size=35, bold=True, color=WHITE)
+        for i, painel in enumerate(("Total de eventos coletados", "Eventos por nível",
+                                   "Eventos por provedor", "Eventos ao longo do tempo")):
+            y = 2.66 + i * 0.76
+            faixa(s, 0.75, y + 0.13, 0.19, 0.045, CODE_TYPE)
+            texto(s, 1.12, y, 8.35, 0.46, painel, size=23, color=ON_DARK)
+    faixa(s, 10.05, 1.65, 0.04, 4.85, SLATE)
+    texto(s, 10.30, 1.71, 2.30, 0.50, "≈ 5 min", size=28, bold=True, color=CODE_TYPE)
+    passos = (
+        ("Fonte", "Visualizador de Eventos"),
+        ("Ingestão", "JSONL, Logstash e índice"),
+        ("Exploração", "Discover e Lens"),
+        ("Interação", "Filtros no dashboard"),
+    )
+    for i, (nome, detalhe) in enumerate(passos):
+        y = 2.46 + i * 0.98
+        texto(s, 10.30, y, 2.31, 0.36, nome, size=19, bold=True, color=WHITE)
+        texto(s, 10.30, y + 0.37, 2.31, 0.45, detalhe, size=15, color=ON_DARK)
+    fala = ("Seguir o guia rápido no README e o roteiro detalhado na seção 3 de docs/roteiro_demonstracao.md. "
+            "Mostrar o Visualizador de Eventos, religar o coletor e mostrar a linha JSON. Em seguida, explicar "
+            "a configuração do Logstash, conferir a contagem no Elasticsearch, filtrar no Discover, criar um "
+            "gráfico no Lens pelo campo event.code e aplicar um filtro por clique no dashboard. Relacionar os "
+            "passos aos conceitos dos slides 4 a 7.")
+    if tem_captura:
+        fala += "\n\nImagem: dashboard Eventos do Windows, com os quatro painéis e o intervalo Last 7 days."
+    notas(s, fala)
 
 
 def slide_vantagens(prs, layout):
     s = prs.slides.add_slide(layout)
     titulo(s, "Vantagens")
-    itens = [
-        ("Sem código", "Pesquisar, filtrar e criar gráficos pela interface"),
-        ("Integração nativa", "Buscas e agregações executadas pelo próprio Elasticsearch"),
-        ("Ingestão flexível", "O Logstash combina entradas, filtros e saídas por configuração [9]"),
-        ("Interatividade", "Filtro de tempo global e filtros por clique em todos os painéis"),
-        ("Essencial gratuito", "Toda a demonstração roda na licença gratuita Basic [26]"),
-        ("Portabilidade", "Pipeline e dashboard no repositório; cada PC coleta os próprios eventos"),
-    ]
-    for i, (lead, desc) in enumerate(itens):
-        x, y = 0.6 + (i % 3) * 4.11, 1.6 + (i // 3) * 2.45
-        forma(s, x, y, 3.91, 2.2, fill=LIGHT, nome=lead, paragrafos=[
-            P(R(str(i + 1), bold=True, size=28, color=TEAL), after=2),
-            P(R(lead, bold=True, size=21, color=NAVY), after=6),
-            P(desc)], size=16, margens=(0.28, 0.18, 0.25, 0.12))
-    notas(s, "Sem código; integração nativa com o Elasticsearch; ingestão flexível com o Logstash; interatividade; "
-             "o essencial é gratuito; pipeline e dashboard ficam no repositório e cada computador coleta os seus eventos.")
+    faixa(s, 0.72, 1.73, 4.75, 4.99, TEAL_TINT)
+    texto(s, 1.04, 2.16, 4.09, 1.55, "Visualização\nsem programação", size=35, bold=True, color=NAVY)
+    texto(s, 1.04, 4.01, 4.10, 2.20, [
+        P("O Lens permite criar gráficos pela interface.", after=13),
+        P("A coleta e a ingestão usam scripts e configurações."),
+    ], size=20)
+    itens = (
+        ("Integração nativa", "O Elasticsearch executa buscas e agregações."),
+        ("Ingestão flexível", "O Logstash combina entradas, filtros e saídas."),
+        ("Interatividade", "Tempo e filtros se aplicam ao painel inteiro."),
+        ("Recursos gratuitos na demo", "A demonstração funciona com a licença Basic."),
+        ("Portabilidade", "Cada computador coleta seus próprios eventos."),
+    )
+    for i, (nome, descricao) in enumerate(itens):
+        y = 1.75 + i * 0.97
+        texto(s, 5.90, y, 6.71, 0.38, nome, size=21, bold=True, color=NAVY)
+        texto(s, 5.90, y + 0.41, 6.71, 0.37, descricao, size=17)
+        if i < len(itens) - 1:
+            faixa(s, 5.90, y + 0.83, 6.71, 0.022, BORDER)
+    notas(s, "O Kibana permite pesquisar, filtrar e criar gráficos pela interface. A solução completa inclui "
+             "um script PowerShell e a configuração do Logstash. O Elasticsearch executa as consultas e "
+             "agregações. O Logstash é flexível, os filtros do painel são interativos e os recursos usados "
+             "funcionam na licença Basic. O repositório leva o pipeline e o dashboard, e cada computador "
+             "coleta os próprios eventos.", refs=(1, 6, 9, 26))
 
 
 def slide_limitacoes_usos(prs, layout):
     s = prs.slides.add_slide(layout)
-    titulo(s, "Limitações e exemplos de uso")
-    limitacoes = [
-        ("Mais memória: ", "três serviços (Elasticsearch, Logstash e Kibana)"),
-        ("Não é instantâneo: ", "verificação a cada 15 s"),
-        ("Escopo restrito: ", "só metadados do canal Aplicativo, por privacidade"),
-        ("Segurança exige configuração: ", "desligada aqui só por didática [22]"),
-        ("Solução local: ", "um computador, sem alta disponibilidade"),
-    ]
-    usos = [
-        ("Suporte e TI: ", "falhas recorrentes de aplicativos e serviços"),
-        ("Logs em escala: ", "solução de observabilidade da Elastic [27]"),
-        ("Segurança: ", "SIEM com Elastic Security [28]"),
-        ("Vários computadores: ", "agentes enviando ao mesmo Elasticsearch [1]"),
-    ]
-    for x, cabecalho, cor, itens, nome in ((0.6, "Limitações", RED, limitacoes, "Limitações"),
-                                           (6.78, "Exemplos de uso", TEAL, usos, "Exemplos de uso")):
-        pars = [P(R(cabecalho, bold=True, size=24, color=cor), after=12)]
-        pars += [P(R(lead, bold=True, color=NAVY), R(resto), bullet=True, bullet_color=cor, after=10)
-                 for lead, resto in itens]
-        forma(s, x, 1.6, 5.95, 4.9, fill=LIGHT, nome=nome, paragrafos=pars, size=17,
-              margens=(0.3, 0.25, 0.3, 0.15))
-    notas(s, "Limitações: mais memória por serem três serviços, coleta a cada 15 segundos, só metadados do canal "
-             "Aplicativo, segurança desligada só por didática e solução local. Usos: suporte e TI, logs em escala, "
-             "segurança e vários computadores com agentes.")
+    titulo(s, "Limitações e casos de uso")
+    colunas = (
+        (0.72, "Limitações da demo", RED, (
+            ("Memória", "Três serviços em execução."),
+            ("Cadência", "O coletor consulta o Windows a cada 15 s."),
+            ("Privacidade", "Só metadados do canal Aplicativo."),
+            ("Escopo local", "Um computador e um nó."),
+        )),
+        (6.91, "Casos de uso", TEAL, (
+            ("Suporte e TI", "Investigar falhas recorrentes."),
+            ("Observabilidade", "Acompanhar logs em escala."),
+            ("Segurança", "Analisar eventos com um SIEM."),
+            ("Vários computadores", "Consolidar registros com agentes."),
+        )),
+    )
+    for x, cabecalho, cor, itens in colunas:
+        faixa(s, x, 1.64, 5.70, 0.05, cor)
+        texto(s, x, 1.91, 5.70, 0.47, cabecalho, size=25, bold=True, color=NAVY)
+        for i, (nome, descricao) in enumerate(itens):
+            y = 2.62 + i * 0.78
+            texto(s, x, y, 5.70, 0.34, nome, size=19, bold=True, color=NAVY)
+            texto(s, x, y + 0.35, 5.70, 0.34, descricao, size=17)
+    faixa(s, 6.63, 1.89, 0.035, 3.80, BORDER)
+    faixa(s, 0.72, 6.06, 11.89, 0.76, RED_TINT)
+    texto(s, 0.93, 6.22, 11.44, 0.45, [
+        P(R("Segurança desabilitada só na demo local. ", bold=True, color=NAVY),
+          R("Em produção, configure autenticação e TLS. [22]")),
+    ], size=18)
+    notas(s, "A demonstração exige mais memória por usar três serviços. O coletor verifica a cada 15 segundos e "
+             "se limita a metadados do canal Aplicativo. A segurança desabilitada é uma simplificação inadequada "
+             "para produção. As portas ficam disponíveis somente na máquina local. Em outros projetos, "
+             "a stack pode apoiar suporte e TI, observabilidade, segurança e coleta de vários computadores "
+             "com agentes.", refs=(1, 22, 27, 28))
+
+
+def slide_referencias(prs, layout):
+    s = prs.slides.add_slide(layout)
+    titulo(s, "Referências")
+    grupos = (
+        (0.72, "Elastic Stack e Logstash", (
+            (1, "The Elastic Stack"),
+            (2, "Index fundamentals"),
+            (9, "How Logstash Works"),
+            (10, "File input plugin"),
+            (12, "Elasticsearch output plugin"),
+        )),
+        (6.91, "Kibana", (
+            (3, "Create a data view"),
+            (4, "Discover"),
+            (5, "KQL"),
+            (6, "Lens visualizations"),
+            (7, "Dashboards"),
+        )),
+    )
+    for x, titulo_grupo, itens in grupos:
+        texto(s, x, 1.70, 5.69, 0.49, titulo_grupo, size=24, bold=True, color=NAVY)
+        faixa(s, x, 2.25, 5.68, 0.033, BORDER)
+        for i, (numero, fonte) in enumerate(itens):
+            texto(s, x, 2.47 + i * 0.50, 5.69, 0.37, [
+                P(R(f"[{numero}]".ljust(5), color=MUTED, font=CODE, size=14),
+                  R(fonte, color=TEAL, link=FONTES[numero])),
+            ], size=19)
+    texto(s, 0.72, 5.42, 11.89, 0.42, [
+        P(R("Microsoft  ", bold=True, color=NAVY), R("[15]  ", color=MUTED, font=CODE, size=14),
+          R("Get-WinEvent", color=TEAL, link=FONTES[15])),
+    ], size=20)
+    texto(s, 0.72, 6.39, 11.89, 0.37, "Lista completa e datas de acesso em docs/referencias.md.", size=17, color=MUTED)
+    notas(s, "Indicar as fontes oficiais da Elastic e da Microsoft. Os links do slide levam às páginas usadas no "
+             "seminário. As referências completas, incluindo as datas de acesso, estão em docs/referencias.md.",
+          refs=(1, 2, 3, 4, 5, 6, 7, 9, 10, 12, 15))
 
 
 def slide_conclusao(prs, layout):
     s = prs.slides.add_slide(layout)
-    titulo(s, "Conclusão e referências")
-    mensagens = [
-        "O Logstash prepara, o Elasticsearch guarda e o Kibana mostra.",
-        "Data View conecta, Discover explora, Lens visualiza e Dashboard reúne.",
-        "Na demo, eventos reais deste computador chegam ao dashboard automaticamente, sem mensagens nem dados pessoais.",
-    ]
-    for i, msg in enumerate(mensagens):
-        y = 1.6 + i * 1.42
-        forma(s, 0.6, y, 5.6, 1.25, fill=LIGHT, nome=f"Mensagem {i + 1}", paragrafos=[P(msg)],
-              size=16, color=NAVY, anchor=MSO_ANCHOR.MIDDLE, margens=(1.0, 0.05, 0.2, 0.05), after=0)
-        forma(s, 0.82, y + 0.32, 0.6, 0.6, fill=TEAL, tipo=MSO_SHAPE.OVAL, nome=f"Número {i + 1}",
-              paragrafos=[P(R(str(i + 1), bold=True), align=PP_ALIGN.CENTER)], size=20, color=WHITE,
-              anchor=MSO_ANCHOR.MIDDLE, margens=(0, 0, 0, 0), after=0)
-    texto(s, 0.6, 6.0, 5.6, 0.7, [P(R("Obrigado! Perguntas?", bold=True))], size=26, color=TEAL,
-          anchor=MSO_ANCHOR.MIDDLE, margens=(0, 0, 0, 0))
-    refs = [
-        ("ELASTIC", "The Elastic Stack", "elastic.co/docs/get-started/the-stack"),
-        ("ELASTIC", "How Logstash Works", "elastic.co/docs/reference/logstash/how-logstash-works"),
-        ("ELASTIC", "File input plugin", "elastic.co/docs/reference/logstash/plugins/plugins-inputs-file"),
-        ("ELASTIC", "Elasticsearch output plugin",
-         "elastic.co/docs/reference/logstash/plugins/plugins-outputs-elasticsearch"),
-        ("ELASTIC", "Create a data view", "elastic.co/docs/explore-analyze/find-and-organize/data-views"),
-        ("ELASTIC", "Discover", "elastic.co/docs/explore-analyze/discover"),
-        ("ELASTIC", "Lens visualizations", "elastic.co/docs/explore-analyze/visualize/lens"),
-        ("ELASTIC", "Dashboards", "elastic.co/docs/explore-analyze/dashboards"),
-        ("MICROSOFT", "Get-WinEvent",
-         "learn.microsoft.com/powershell/module/microsoft.powershell.diagnostics/get-winevent"),
-    ]
-    pars = [P(R("Referências principais", bold=True, size=18, color=NAVY), after=6)]
-    for autor, titulo_ref, url in refs:
-        pars += [P(R(autor + ". "), R(titulo_ref, bold=True), R("."), after=0),
-                 P(R(url, color=MUTED, size=10.5), after=4)]
-    pars.append(P(R("Lista completa (28 fontes, com datas de acesso): docs/referencias.md", italic=True,
-                    color=MUTED), before=2))
-    forma(s, 6.45, 1.6, 6.28, 5.3, fill=LIGHT, nome="Referências", paragrafos=pars, size=11.5,
-          margens=(0.25, 0.18, 0.2, 0.1))
-    notas(s, "Retomar as três mensagens: Logstash prepara, Elasticsearch guarda e Kibana mostra; Data View, Discover, "
-             "Lens e Dashboard; na demo, dados reais coletados automaticamente, sem mensagens nem dados pessoais. "
-             "Referências oficiais da Elastic e da Microsoft. Abrir para perguntas.")
+    fundo_escuro(s)
+    titulo(s, "Conclusão", cor=WHITE)
+    mensagens = (
+        "O Windows fornece os eventos do canal Aplicativo.",
+        "O Logstash prepara os registros e o Elasticsearch os indexa.",
+        "O Kibana permite investigar os dados com filtros e gráficos.",
+    )
+    for i, mensagem in enumerate(mensagens):
+        y = 1.93 + i * 1.42
+        texto(s, 0.72, y, 0.56, 0.42, f"0{i + 1}", size=18, bold=True, color=CODE_TYPE)
+        texto(s, 1.47, y - 0.05, 6.49, 1.08, mensagem, size=27, bold=True, color=WHITE)
+    faixa(s, 8.46, 1.78, 0.044, 4.56, SLATE)
+    texto(s, 8.93, 3.00, 3.76, 0.80, "Perguntas?", size=42, bold=True, color=CODE_TYPE)
+    notas(s, "Retomar as três mensagens. O Windows forneceu os eventos. O Logstash preparou os registros e o "
+             "Elasticsearch os armazenou. No Kibana, o Data View indicou o índice, o Discover permitiu explorar, "
+             "o Lens criou o gráfico e o Dashboard reuniu as visualizações. Foram usados eventos reais coletados "
+             "automaticamente, com as mensagens e os identificadores pessoais diretos fora da exportação. "
+             "Abrir para perguntas.")
 
 
-def main():
+def main(saida=SAIDA):
     prs = Presentation()
     fator = 13.333 / 10
     prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
     ajustar_layouts(prs, fator)
     ajustar_tema(prs)
     layout = next(l for l in prs.slide_layouts if l.name == "Title Only")
-    for criar in (slide_capa, slide_problema, slide_o_que_e, slide_dados, slide_ferramentas, slide_logstash,
-                  slide_arquitetura, slide_demonstracao, slide_transicao, slide_vantagens, slide_limitacoes_usos,
-                  slide_conclusao):
+    for criar in (slide_capa, slide_problema, slide_o_que_e, slide_dados, slide_ferramentas, slide_arquitetura,
+                  slide_logstash, slide_privacidade, slide_transicao, slide_vantagens, slide_limitacoes_usos,
+                  slide_referencias, slide_conclusao):
         criar(prs, layout)
     cp = prs.core_properties
     cp.title = "Kibana: explorando eventos reais do Windows com Logstash e Elasticsearch"
@@ -632,8 +732,8 @@ def main():
     for parte in prs.part.package.iter_parts():
         if str(parte.partname) == "/docProps/app.xml":
             parte._blob = app_xml.encode("utf-8")
-    prs.save(SAIDA)
-    print(f"Gerado: {SAIDA} ({len(prs.slides)} slides)")
+    prs.save(saida)
+    print(f"Gerado: {saida} ({len(prs.slides)} slides)")
 
 
 if __name__ == "__main__":

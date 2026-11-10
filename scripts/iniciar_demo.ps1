@@ -117,8 +117,9 @@ $sobrescrever = if ($RestaurarDashboard) { 'true' } else { 'false' }
 $resposta = Invoke-RestMethod -Method Post -Uri "http://localhost:5601/api/saved_objects/_import?overwrite=$sobrescrever" `
     -Headers @{ 'kbn-xsrf' = 'true' } -ContentType "multipart/form-data; boundary=$limite" `
     -Body ([System.Text.Encoding]::UTF8.GetBytes($corpo))
-$conflitos = @($resposta.errors | Where-Object { $_.error.type -eq 'conflict' }).Count
-$outrosErros = @($resposta.errors | Where-Object { $_.error.type -ne 'conflict' }).Count
+$erros = @($resposta.errors | Where-Object { $null -ne $_ })
+$conflitos = @($erros | Where-Object { $_.error.type -eq 'conflict' }).Count
+$outrosErros = @($erros | Where-Object { $_.error.type -ne 'conflict' }).Count
 if ($outrosErros -gt 0) { Falhar "A importação do dashboard falhou: $($resposta.errors | ConvertTo-Json -Depth 5 -Compress)" }
 if ($resposta.successCount -gt 0) { Ok "$($resposta.successCount) objeto(s) importado(s) (Data View, visualizações e dashboard)." }
 if ($conflitos -gt 0) { Ok "$conflitos objeto(s) já existiam e foram mantidos (use -RestaurarDashboard para voltar ao original)." }
